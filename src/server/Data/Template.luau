@@ -33,12 +33,14 @@ export type PlayerData = {
 	},
 	Inventory: { [string]: number }, -- chave do item → quantidade
 	Grid: { [string]: RobotData }, -- hexágono ("A1".."D7") → robô; só hexágonos ocupados
+	RobotHp: { [string]: number }, -- hexágono → fração de vida (0 = quebrado); ausente = vida cheia
 	AvatarWeapon: string, -- arma equipada no avatar ("" = nenhuma)
 	Factory: { Lines: { [string]: WorkerData } }, -- "1-1".."3-2"
 	Upgrades: { [string]: number },
 	Settings: {
 		AutoFuse: boolean,
 		AutoSellBelowTier: number, -- 0 = desligado; vende automaticamente itens com tier < valor
+		HordePaused: boolean, -- jogador pausou as hordas para focar no tycoon
 	},
 	Stats: {
 		Kills: number,
@@ -76,10 +78,11 @@ local Template: PlayerData = {
 		["Weapon:Sword:1"] = 2, -- uma para o robô do pad 1, outra para o avatar
 	},
 	Grid = { A1 = starterRobot },
+	RobotHp = {},
 	AvatarWeapon = "Weapon:Sword:1",
 	Factory = { Lines = lines },
 	Upgrades = { KillValue = 0, Rolls = 0, Luck = 0, Grid = 0 },
-	Settings = { AutoFuse = false, AutoSellBelowTier = 0 },
+	Settings = { AutoFuse = false, AutoSellBelowTier = 0, HordePaused = false },
 	Stats = { Kills = 0, Rolls = 0, Defeats = 0 },
 }
 

@@ -30,8 +30,8 @@ src/
       DataService       ProfileStore (session lock) + Replica (sincroniza com o cliente)
       RemoteGuard       entrada única do cliente: validação, rate limit, pcall
       BaseService       5 bases ao redor do centro, grid hexagonal e ponto A (gera placeholder)
-      RobotService      robôs do grid: perseguem zumbis, voltam ao hexágono a cada horda (mantendo a vida)
-      HordeService      horda instanciada, zumbis sem trilha (zigue-zague + separação), invasões, checkpoints
+      RobotService      robôs do grid: perseguem zumbis; vida salva entre hordas, quebrado só volta na derrota
+      HordeService      horda instanciada, zumbis caçam robôs e depois a base, pausa do jogador, checkpoints
       InventoryService  roleta, forja 3→1, venda, auto-fundir/vender, equipar, upgrades
   client/              → StarterPlayerScripts.Client
     Hud                 HUD provisório para testes (será trocado pelas telas do Figma)

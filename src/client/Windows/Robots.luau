@@ -59,7 +59,12 @@ local function refresh()
 				color = T.Background
 			elseif robot then
 				local hp = hpByCell[cell]
-				local hpText = if hp and hp.MaxHp > 0 then `{math.floor(hp.Hp / hp.MaxHp * 100)}%` else ""
+				local hpText = if hp
+						and hp.MaxHp > 0
+						and hp.Hp <= 0
+					then "💥"
+					elseif hp and hp.MaxHp > 0 then `{math.floor(hp.Hp / hp.MaxHp * 100)}%`
+					else ""
 				text =
 					`{weaponIcon(robot.Weapon)} <font size="11">{cell}</font>\n<font size="12">{hpText}</font>`
 				color = Common.TierColor(robot.Weapon ~= "" and robot.Weapon or robot.Torso)
@@ -147,7 +152,7 @@ local function refresh()
 	Ui.Label(
 		header,
 		`<b>Robô {cell}</b>  {hpText}{if broken
-			then "  <font color='#ff6050'>destruído (volta na próxima horda)</font>"
+			then "  <font color='#ff6050'>💥 quebrado — volta só após uma derrota</font>"
 			else ""}`,
 		UDim2.new(1, -170, 1, 0)
 	)

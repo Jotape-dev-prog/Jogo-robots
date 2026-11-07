@@ -4,7 +4,10 @@
 --   • Durante a horda os robôs saem do hexágono e perseguem os zumbis conforme o modo de mira;
 --     armas corpo a corpo chegam perto, o rifle mantém distância.
 --   • No início de cada horda voltam ao seu hexágono MANTENDO a vida com que terminaram a anterior.
---     Robô destruído volta com 100% (regra do GDD: sem custo). Na derrota, todos são curados.
+--     Robô quebrado NÃO volta: fica fora (apagado no hexágono) até a derrota, quando todos são consertados.
+--     Isso é a dificuldade do jogo. A vida fica salva no perfil (PlayerData.RobotHp), então sair e
+--     voltar não conserta nada.
+--   • Robô quebrado não pode ter peças trocadas (evita "consertar" reequipando).
 --   • HP = soma das peças × multiplicador do tier. Pernas aumentam a velocidade.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -176,6 +179,9 @@ function RobotService.RefreshCell(player: Player, cell: string)
 
 	local loadout = (data.Grid :: any)[cell]
 	if not loadout or not Grid.IsUnlocked(cell, columnsOf(player)) then
+		if not loadout and (data.RobotHp :: any)[cell] ~= nil then
+			DataService.Set(player, { "RobotHp", cell }, nil) -- hexágono vazio: nada a lembrar
+		end
 		if hpListener then
 			hpListener(player, cell, 0, 0)
 		end
@@ -188,20 +194,29 @@ function RobotService.RefreshCell(player: Player, cell: string)
 
 	local home = cellPosition(player, cell) :: Vector3
 	local position = if old then old.Position else home
+	-- Vida: do robô que já existia ou, ao entrar no jogo, a salva no perfil.
+	local ratio = 1
+	local broken = false
+	if old then
+		ratio = if old.MaxHp > 0 then old.Hp / old.MaxHp else 1
+		broken = old.Broken
+	else
+		local saved = (data.RobotHp :: any)[cell]
+		if typeof(saved) == "number" then
+			ratio = math.clamp(saved, 0, 1)
+			broken = ratio <= 0
+		end
+	end
+	local hp = if broken then 0 else maxHp * ratio
+	if broken then
+		position = home
+	end
 	local facing = -base.GridOrigin.LookVector -- de frente para o ponto A
 	local model = Models.Robot(loadout, CFrame.lookAt(position, position + facing))
 	model:SetAttribute("Cell", cell)
 	model:SetAttribute("OwnerUserId", player.UserId)
 	model.Parent = base.Robots
 	local root = model.PrimaryPart
-
-	local hp = maxHp
-	local broken = false
-	if old then
-		local ratio = if old.MaxHp > 0 then old.Hp / old.MaxHp else 1
-		hp = maxHp * ratio
-		broken = old.Broken
-	end
 
 	local robot: Robot = {
 		Cell = cell,
@@ -230,25 +245,65 @@ function RobotService.RefreshAll(player: Player)
 	end
 end
 
--- Início de horda: todos voltam ao hexágono. Vida é mantida; destruídos voltam com 100%.
-function RobotService.ResetForWave(player: Player)
-	for _, robot in robots[player] or {} do
-		robot.Position = robot.Home
-		if robot.Broken then
-			robot.Broken = false
-			robot.Hp = robot.MaxHp
-		end
-		notify(player, robot)
+local function placeAt(robot: Robot, position: Vector3)
+	robot.Position = position
+	local root = robot.Root
+	if root then
+		local ground = Vector3.new(position.X, robot.Home.Y + ROBOT_HEIGHT_OFFSET, position.Z)
+		root.CFrame = CFrame.lookAt(ground, ground + robot.Facing)
 	end
 end
 
--- Cura total (usado na derrota, quando o jogo recomeça do checkpoint).
+-- Grava a vida de cada robô no perfil (só os que não estão com vida cheia).
+function RobotService.SaveHp(player: Player)
+	local data = DataService.Get(player)
+	local perPlayer = robots[player]
+	if not data or not perPlayer then
+		return
+	end
+	local saved: { [string]: number } = {}
+	for cell, robot in perPlayer do
+		local ratio = if robot.Broken or robot.MaxHp <= 0 then 0 else robot.Hp / robot.MaxHp
+		if ratio < 0.999 then
+			saved[cell] = math.floor(ratio * 1000) / 1000
+		end
+	end
+	DataService.Set(player, { "RobotHp" }, saved)
+end
+
+-- Início de horda: todos voltam ao hexágono mantendo a vida. Quebrados continuam fora.
+function RobotService.ResetForWave(player: Player)
+	for _, robot in robots[player] or {} do
+		placeAt(robot, robot.Home)
+		notify(player, robot)
+	end
+	RobotService.SaveHp(player)
+end
+
+-- Conserto total (usado na derrota, quando o jogo recomeça do checkpoint).
 function RobotService.HealAll(player: Player)
 	for _, robot in robots[player] or {} do
 		robot.Broken = false
 		robot.Hp = robot.MaxHp
+		placeAt(robot, robot.Home)
 		notify(player, robot)
 	end
+	RobotService.SaveHp(player)
+end
+
+function RobotService.IsBroken(player: Player, cell: string): boolean
+	local robot = (robots[player] or {})[cell]
+	return robot ~= nil and robot.Broken
+end
+
+function RobotService.AliveCount(player: Player): number
+	local count = 0
+	for _, robot in robots[player] or {} do
+		if not robot.Broken then
+			count += 1
+		end
+	end
+	return count
 end
 
 function RobotService.GetRobots(player: Player): { [string]: Robot }
@@ -262,6 +317,7 @@ function RobotService.Damage(player: Player, robot: Robot, amount: number)
 	robot.Hp = math.max(0, robot.Hp - amount)
 	if robot.Hp <= 0 then
 		robot.Broken = true
+		RobotService.SaveHp(player) -- grava na hora: sair do jogo não conserta
 	end
 	notify(player, robot)
 end
@@ -440,6 +496,7 @@ function RobotService.MoveRobot(player: Player, from: string, to: string): boole
 	if not rb and hpListener then
 		hpListener(player, from, 0, 0)
 	end
+	RobotService.SaveHp(player) -- a vida acompanha o robô
 	return true
 end
 

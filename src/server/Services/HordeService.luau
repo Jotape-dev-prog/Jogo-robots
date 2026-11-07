@@ -3,7 +3,10 @@
 --   • Wave Spawning Limit: no máximo 15 zumbis vivos por base; o resto espera na fila.
 --   • 3 invasões = derrota: -10% do dinheiro, horda pausa, volta a um checkpoint desbloqueado.
 --   • Checkpoint a cada 10 hordas (1, 11, 21...). Boss na última horda de cada bloco.
---   • Robôs restauram 100% de HP no início de cada horda.
+--   • Robôs mantêm a vida entre hordas; quebrados ficam fora até a derrota.
+--   • Zumbis caçam primeiro os robôs vivos; só quando não sobra nenhum vão para o núcleo.
+--   • O jogador pode pausar as hordas para focar no tycoon: a horda em andamento é cancelada
+--     (recomeça do início ao retomar) e a fábrica continua rendendo.
 -- Um único Heartbeat move todos os zumbis de todas as bases (BulkMoveTo) — barato para 5 × 15.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -26,7 +29,7 @@ local RobotService = require(script.Parent.RobotService)
 local RemoteGuard = require(script.Parent.RemoteGuard)
 
 type Zombie = Types.Zombie
-type State = "Intermission" | "Active" | "Defeated"
+type State = "Intermission" | "Active" | "Defeated" | "Paused"
 
 type Run = {
 	Player: Player,
@@ -50,11 +53,10 @@ local ZOMBIE_LOOK = {
 	Tank = { Size = Vector3.new(3.4, 6.4, 2.6), Color = Color3.fromRGB(70, 90, 60) },
 	Boss = { Size = Vector3.new(6, 10, 4.5), Color = Color3.fromRGB(120, 30, 40) },
 }
-local ROBOT_AGGRO_RANGE = 10 -- zumbis desviam para atacar robôs próximos
-local ROBOT_ATTACK_RANGE = 3.5
+local ROBOT_ATTACK_RANGE = 3.5 -- somado à metade da largura do zumbi (o boss alcança mais longe)
 local ZOMBIE_SEPARATION = 2.6
 local CORE_REACH = 5 -- distância do núcleo que conta como invasão
-local WEAVE_STRENGTH = 0.55 -- quanto o zumbi zigue-zagueia (0 = linha reta)
+local RESUME_SECONDS = 5 -- contagem ao retomar as hordas
 
 local HordeService = {}
 
@@ -209,6 +211,10 @@ local function startWave(run: Run, wave: number)
 	run.SpawnTimer = 0
 	run.State = "Active"
 	DataService.Set(run.Player, { "Horde", "Current" }, wave)
+	local data = DataService.Get(run.Player)
+	if data and data.Settings.HordePaused then
+		DataService.Set(run.Player, { "Settings", "HordePaused" }, false)
+	end
 	RobotService.ResetForWave(run.Player)
 
 	ui(run, "Wave", wave)
@@ -241,7 +247,35 @@ local function completeWave(run: Run)
 		DataService.Set(player, { "Horde", "HighestCheckpoint" }, nextWave)
 	end
 	DataService.Set(player, { "Horde", "Current" }, nextWave)
+	RobotService.SaveHp(player)
 	enterIntermission(run, nextWave, HordeConfig.IntermissionSeconds)
+end
+
+-- Pausa pedida pelo jogador. A horda em andamento é descartada sem penalidade, mas os robôs
+-- continuam com a vida (e os quebrados continuam quebrados) — pausar não conserta nada.
+local function pauseRun(run: Run)
+	if run.State == "Paused" then
+		return
+	end
+	if run.State == "Active" then
+		clearZombies(run)
+		run.Invasions = 0
+		ui(run, "Invasions", 0)
+	end
+	run.State = "Paused"
+	RobotService.SaveHp(run.Player)
+	DataService.Set(run.Player, { "Settings", "HordePaused" }, true)
+	ui(run, "State", "Paused")
+	ui(run, "Wave", run.Wave)
+	syncCounts(run)
+end
+
+local function resumeRun(run: Run)
+	if run.State ~= "Paused" then
+		return
+	end
+	DataService.Set(run.Player, { "Settings", "HordePaused" }, false)
+	enterIntermission(run, run.Wave, RESUME_SECONDS)
 end
 
 local function defeat(run: Run)
@@ -265,6 +299,10 @@ local function defeat(run: Run)
 end
 
 local function stepRun(run: Run, dt: number, now: number)
+	if run.State == "Paused" then
+		RobotService.Idle(run.Player, now, dt)
+		return
+	end
 	if run.State ~= "Active" then
 		RobotService.Idle(run.Player, now, dt) -- voltam caminhando para o hexágono
 		run.Timer -= dt
@@ -311,34 +349,33 @@ local function stepRun(run: Run, dt: number, now: number)
 	while i <= #run.Zombies do
 		local z = run.Zombies[i]
 		local invaded = false
+		local attacking: RobotService.Robot? = nil
 		if now >= z.StunnedUntil then
-			-- 1) Robô vivo por perto? Desvia para atacá-lo.
-			local attacking: RobotService.Robot? = nil
-			local chase: Vector3? = nil
-			local nearest = ROBOT_AGGRO_RANGE
+			-- 1) Caça o robô vivo mais próximo (em qualquer lugar da base).
+			local target: RobotService.Robot? = nil
+			local nearest = math.huge
 			for _, robot in robots do
 				if not robot.Broken then
 					local d = flat(robot.Position - z.Position).Magnitude
-					if d <= nearest then
-						nearest = d
-						chase = robot.Position
-						attacking = if d <= ROBOT_ATTACK_RANGE then robot else nil
+					if d < nearest then
+						nearest, target = d, robot
 					end
 				end
 			end
 
-			if attacking then
-				RobotService.Damage(run.Player, attacking, z.ContactDps * dt)
-				z.Facing = flat(attacking.Position - z.Position).Unit
+			local reach = ROBOT_ATTACK_RANGE + ZOMBIE_LOOK[z.Kind].Size.X / 2
+			if target and nearest <= reach then
+				attacking = target
+				RobotService.Damage(run.Player, target, z.ContactDps * dt)
+				local toRobot = flat(target.Position - z.Position)
+				if toRobot.Magnitude > 0.01 then
+					z.Facing = toRobot.Unit
+				end
 			else
-				-- 2) Vai até o robô ou até o núcleo, zigue-zagueando (sem trilha fixa).
-				local goal = chase or base.Core
+				-- 2) Anda até o robô; sem robôs vivos, vai direto para o núcleo.
+				local goal = if target then target.Position else base.Core
 				local toGoal = flat(goal - z.Position)
 				local desired = if toGoal.Magnitude > 0.01 then toGoal.Unit else z.Facing
-				if not chase then
-					local side = Vector3.new(-desired.Z, 0, desired.X)
-					desired += side * math.sin(now * 0.9 + z.Seed) * WEAVE_STRENGTH
-				end
 				-- 3) Separação: não andar em fila nem empilhar.
 				for _, other in run.Zombies do
 					if other ~= z and not other.Dead then
@@ -356,7 +393,8 @@ local function stepRun(run: Run, dt: number, now: number)
 				end
 				z.Position = clampToBase(base, z.Position + desired * z.Speed * dt)
 
-				if flat(base.Core - z.Position).Magnitude <= CORE_REACH then
+				-- Só invade quem está indo para o núcleo (todos os robôs já caíram).
+				if not target and flat(base.Core - z.Position).Magnitude <= CORE_REACH then
 					invaded = true
 				end
 			end
@@ -458,13 +496,19 @@ local function begin(player: Player)
 	}
 	runs[player] = run
 	RobotService.RefreshAll(player)
-	enterIntermission(run, data.Horde.Current, HordeConfig.IntermissionSeconds + 2)
+	if data.Settings.HordePaused then
+		run.State = "Paused"
+		replica:Set({ "State" }, "Paused")
+	else
+		enterIntermission(run, data.Horde.Current, HordeConfig.IntermissionSeconds + 2)
+	end
 end
 
 local function finish(player: Player)
 	local run = runs[player]
 	if run then
 		clearZombies(run)
+		RobotService.SaveHp(player)
 		run.Replica:Destroy()
 		runs[player] = nil
 	end
@@ -486,6 +530,19 @@ local function handleStartFromCheckpoint(player: Player, wave: any): RemoteGuard
 		return RemoteGuard.Fail("Checkpoint não desbloqueado")
 	end
 	startWave(run, wave)
+	return { Ok = true }
+end
+
+local function handleSetHordePaused(player: Player, value: any): RemoteGuard.Result
+	local run = runs[player]
+	if not run or typeof(value) ~= "boolean" then
+		return RemoteGuard.Fail("Pedido inválido")
+	end
+	if value then
+		pauseRun(run)
+	else
+		resumeRun(run)
+	end
 	return { Ok = true }
 end
 
@@ -552,6 +609,7 @@ function HordeService.Start()
 		run.Replica:Set({ "Robots", cell }, { Hp = shownHp, MaxHp = shownMax })
 	end)
 	RemoteGuard.Handle("StartFromCheckpoint", 3, 0.5, handleStartFromCheckpoint)
+	RemoteGuard.Handle("SetHordePaused", 3, 0.5, handleSetHordePaused)
 
 	DataService.OnLoaded(begin)
 	DataService.OnReleasing(finish)

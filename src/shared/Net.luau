@@ -18,6 +18,7 @@ Net.Functions = {
 	"SetAutoSettings", -- (autoFuse: boolean, autoSellBelowTier: number)
 	"BuyUpgrade", -- (name: string)
 	"StartFromCheckpoint", -- (wave: number)
+	"SetHordePaused", -- (paused: boolean) pausa/retoma as hordas do jogador (foco no tycoon)
 	"Attack", -- (aim: Vector3?) golpe do avatar
 	"EquipAvatarWeapon", -- (key: string | "")
 	"EquipWorker", -- (lineId: string, slot: string, key: string | "")

@@ -36,7 +36,8 @@ local function refresh()
 		return
 	end
 	local defeated = horde.State == "Defeated"
-	checkpointButton.Visible = horde.State == "Intermission" and data.Horde.HighestCheckpoint > 1
+	checkpointButton.Visible = (horde.State == "Intermission" or horde.State == "Paused")
+		and data.Horde.HighestCheckpoint > 1
 	overlay.Visible = defeated or (manualOpen and horde.State ~= "Active")
 	if not overlay.Visible then
 		manualOpen = false

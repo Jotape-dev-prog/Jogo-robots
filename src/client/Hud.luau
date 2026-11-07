@@ -16,6 +16,7 @@ local Hud = {}
 
 local labels: { [string]: TextLabel } = {}
 local invasionBar: Frame? = nil
+local pauseButton: TextButton? = nil
 
 local function refresh()
 	local data, horde = State.Data, State.Horde
@@ -30,8 +31,16 @@ local function refresh()
 	if horde then
 		local boss = if horde.Boss then "  <font color='#ff5050'>💀 BOSS</font>" else ""
 		labels.Wave.Text = `🧟 Horda <b>{horde.Wave}</b>{boss}`
+		local button = pauseButton
+		if button then
+			local userPaused = horde.State == "Paused"
+			button.Text = if userPaused then "▶ Retomar hordas" else "⏸ Pausar hordas"
+			button.BackgroundColor3 = if userPaused then T.Good else T.Bad
+		end
 		if horde.Paused then
 			labels.Status.Text = "⏸ Hordas pausadas (PvP)"
+		elseif horde.State == "Paused" then
+			labels.Status.Text = "⏸ Hordas pausadas — foco no tycoon"
 		elseif horde.State == "Active" then
 			labels.Status.Text = `Restantes: {horde.Remaining}`
 		elseif horde.State == "Defeated" then
@@ -78,7 +87,7 @@ function Hud.Build(windows: { [string]: Ui.Window })
 	labels.Weapon = Ui.Label(panel, "⚔", UDim2.new(1, 0, 0, 20))
 
 	-- Barra de menu
-	local bar = Ui.Frame(gui, UDim2.fromOffset(760, 52), T.Background, 1)
+	local bar = Ui.Frame(gui, UDim2.fromOffset(920, 52), T.Background, 1)
 	bar.AnchorPoint = Vector2.new(0.5, 1)
 	bar.Position = UDim2.new(0.5, 0, 1, -12)
 	local layout = Ui.ListLayout(bar, true, 8)
@@ -97,6 +106,12 @@ function Hud.Build(windows: { [string]: Ui.Window })
 		end, UDim2.fromOffset(140, 48))
 		b.LayoutOrder = i
 	end
+	-- Pausar/retomar as hordas (a fábrica continua rendendo).
+	pauseButton = Ui.Button(bar, "⏸ Pausar hordas", T.Bad, function()
+		local horde = State.Horde
+		State.Call("SetHordePaused", not (horde and horde.State == "Paused"))
+	end, UDim2.fromOffset(150, 48));
+	(pauseButton :: TextButton).LayoutOrder = #entries + 1
 
 	State.OnChange(refresh)
 	refresh()

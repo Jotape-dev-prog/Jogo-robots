@@ -191,6 +191,9 @@ local function handleEquip(player: Player, cell: any, slot: any, key: any): Remo
 	end
 	local data = DataService.Get(player) :: any
 	local current = data.Grid[cell]
+	if RobotService.IsBroken(player, cell) then
+		return RemoteGuard.Fail("Robô quebrado — só volta a funcionar após uma derrota")
+	end
 	if key ~= "" then
 		local item = Items.Parse(key)
 		if not item or item.Slot ~= slot then
@@ -226,7 +229,19 @@ local function handleEquipBest(player: Player): RemoteGuard.Result
 		return RemoteGuard.Fail("Sem dados")
 	end
 	-- Estoque total (tudo volta para o "bolso" e é redistribuído).
+	-- Robôs quebrados ficam como estão: suas peças não entram na redistribuição.
 	local stock: { [string]: number } = table.clone(data.Inventory)
+	local keptBroken: { [string]: any } = {}
+	for cell, loadout in data.Grid :: any do
+		if RobotService.IsBroken(player, cell) then
+			keptBroken[cell] = loadout
+			for slotName, slotKey in loadout do
+				if slotName ~= "Targeting" and slotKey ~= "" and stock[slotKey] then
+					stock[slotKey] -= 1
+				end
+			end
+		end
+	end
 
 	local function takeBest(slot: string): string
 		local bestKey, bestTier = "", 0
@@ -262,9 +277,11 @@ local function handleEquipBest(player: Player): RemoteGuard.Result
 	local cells = Grid.UnlockedCells(InventoryService.Columns(player))
 	local front, back = {}, {}
 	for _, cell in cells do
-		table.insert(if Grid.IsFrontRow(cell) then front else back, cell)
+		if not keptBroken[cell] then
+			table.insert(if Grid.IsFrontRow(cell) then front else back, cell)
+		end
 	end
-	local newGrid: { [string]: any } = {}
+	local newGrid: { [string]: any } = table.clone(keptBroken)
 	local placed: { string } = {}
 	local function place(cell: string, weaponKey: string)
 		stock[weaponKey] -= 1
