@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
 local Net = require(ReplicatedStorage.Shared.Net)
+local Sound = require(script.Parent.SoundController)
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -84,6 +85,7 @@ local function attack()
 	if ok and result and result.Ok then
 		localCooldownUntil = os.clock() + (result.Cooldown or 0.5) * 0.9
 		playEffect(root, dir, result)
+		Sound.PlayAttack(result.Pattern, result.Hits)
 	end
 end
 

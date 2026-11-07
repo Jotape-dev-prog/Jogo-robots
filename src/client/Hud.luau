@@ -1,279 +1,104 @@
 --!strict
--- HUD PROVISÓRIO para testar o core loop. Será substituído pelas telas desenhadas (Figma).
--- Mostra dinheiro, horda, invasões e tem botões de roleta / equipar / auto-fundir / checkpoint.
+-- HUD: painel de status (canto superior esquerdo) e barra de menu (embaixo) que abre as janelas.
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
-local Net = require(Shared.Net)
-local Items = require(Shared.Config.Items)
-local Rarity = require(Shared.Config.Rarity)
 local Economy = require(Shared.Config.Economy)
+local Items = require(Shared.Config.Items)
 
-local player = Players.LocalPlayer
+local Ui = require(script.Parent.Ui)
+local State = require(script.Parent.State)
+
+local T = Ui.Theme
 
 local Hud = {}
 
-local playerData: any = nil
-local hordeState: any = nil
-
 local labels: { [string]: TextLabel } = {}
-local buttons: { [string]: TextButton } = {}
-local toastLabel: TextLabel? = nil
-local toastToken = 0
-
-local function formatNumber(n: number): string
-	local suffixes = { "", "K", "M", "B", "T", "Qa", "Qi" }
-	local i = 1
-	while math.abs(n) >= 1000 and i < #suffixes do
-		n /= 1000
-		i += 1
-	end
-	if i == 1 then
-		return tostring(math.floor(n))
-	end
-	return string.format("%.1f%s", n, suffixes[i])
-end
-
-local function toast(text: string, color: Color3?)
-	local label = toastLabel
-	if not label then
-		return
-	end
-	toastToken += 1
-	local token = toastToken
-	label.Text = text
-	label.TextColor3 = color or Color3.new(1, 1, 1)
-	label.Visible = true
-	task.delay(3, function()
-		if token == toastToken then
-			label.Visible = false
-		end
-	end)
-end
-
-local function call(name: string, ...: any): any
-	local ok, result = pcall(Net.Function(name).InvokeServer, Net.Function(name), ...)
-	if not ok then
-		toast("Falha de conexão", Color3.fromRGB(255, 90, 90))
-		return nil
-	end
-	if not result.Ok then
-		toast(result.Error or "Erro", Color3.fromRGB(255, 120, 90))
-	end
-	return result
-end
-
---------------------------------------------------------------------------------
--- Atualização
---------------------------------------------------------------------------------
-
-local function maxRolls(): number
-	if not playerData then
-		return 1
-	end
-	return math.min(1 + (playerData.Data.Upgrades.Rolls or 0), Economy.MaxSimultaneousRolls)
-end
+local invasionBar: Frame? = nil
 
 local function refresh()
-	if playerData then
-		local data = playerData.Data
-		labels.Cash.Text = `💰 {formatNumber(data.Cash)}`
-		labels.Checkpoint.Text = `Maior checkpoint: {data.Horde.HighestCheckpoint}`
-		local n = maxRolls()
-		buttons.Roll.Text = `Girar x{n} ({formatNumber(n * Economy.RollCost)})`
-		buttons.AutoFuse.Text = if data.Settings.AutoFuse then "Auto-Fundir: ON" else "Auto-Fundir: OFF"
+	local data, horde = State.Data, State.Horde
+	if data then
 		local income = Economy.FactoryIncome(data.Factory.Lines) * (1 + data.Rebirths * 0.5)
-		labels.Factory.Text = `🏭 Fábrica: +{formatNumber(income)}/s`
+		labels.Cash.Text = `💰 <b>{Ui.FormatNumber(data.Cash)}</b>`
+		labels.Factory.Text = `🏭 +{Ui.FormatNumber(income)}/s`
 		labels.Weapon.Text = if data.AvatarWeapon ~= ""
-			then `⚔ {Items.DisplayName(data.AvatarWeapon)} (clique / F)`
-			else "⚔ Sem arma no avatar"
+			then `⚔ {Items.DisplayName(data.AvatarWeapon)}`
+			else "⚔ <font color='#c86450'>Sem arma</font>"
 	end
-	if hordeState then
-		local s = hordeState.Data
-		local boss = if s.Boss then " 💀 BOSS" else ""
-		labels.Wave.Text = `Horda {s.Wave}{boss}`
-		labels.Invasions.Text = `Invasões: {s.Invasions}/{s.MaxInvasions}`
-		if s.Paused then
+	if horde then
+		local boss = if horde.Boss then "  <font color='#ff5050'>💀 BOSS</font>" else ""
+		labels.Wave.Text = `🧟 Horda <b>{horde.Wave}</b>{boss}`
+		if horde.Paused then
 			labels.Status.Text = "⏸ Hordas pausadas (PvP)"
-		elseif s.State == "Active" then
-			labels.Status.Text = `Zumbis restantes: {s.Remaining}`
-		elseif s.State == "Defeated" then
-			labels.Status.Text = `Derrota! -{formatNumber(s.LastLoss)} • recomeça em {s.Timer}s`
+		elseif horde.State == "Active" then
+			labels.Status.Text = `Restantes: {horde.Remaining}`
+		elseif horde.State == "Defeated" then
+			labels.Status.Text = `<font color='#ff6050'>Base invadida!</font> {horde.Timer}s`
 		else
-			labels.Status.Text = `Próxima horda em {s.Timer}s`
+			labels.Status.Text = `Próxima horda em {horde.Timer}s`
 		end
-		buttons.Checkpoint.Visible = s.State ~= "Active"
-	end
-end
-
-function Hud.BindPlayerData(replica: any)
-	playerData = replica
-	replica:OnChange(refresh)
-	refresh()
-end
-
-function Hud.BindHordeState(replica: any)
-	hordeState = replica
-	replica:OnChange(function(action, path, value)
-		if path[1] == "State" and value == "Defeated" then
-			toast("A base foi invadida 3 vezes!", Color3.fromRGB(255, 80, 80))
-		end
-		refresh()
-	end)
-	refresh()
-end
-
---------------------------------------------------------------------------------
--- Construção
---------------------------------------------------------------------------------
-
-local function makeLabel(name: string, parent: Instance, order: number): TextLabel
-	local label = Instance.new("TextLabel")
-	label.Name = name
-	label.Size = UDim2.new(1, 0, 0, 26)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamBold
-	label.TextScaled = true
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextColor3 = Color3.new(1, 1, 1)
-	label.TextStrokeTransparency = 0.5
-	label.LayoutOrder = order
-	label.Text = ""
-	label.Parent = parent
-	labels[name] = label
-	return label
-end
-
-local function makeButton(
-	name: string,
-	text: string,
-	color: Color3,
-	parent: Instance,
-	onClick: () -> ()
-): TextButton
-	local button = Instance.new("TextButton")
-	button.Name = name
-	button.Size = UDim2.new(0, 170, 0, 46)
-	button.BackgroundColor3 = color
-	button.Font = Enum.Font.GothamBold
-	button.TextScaled = true
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.Text = text
-	button.AutoButtonColor = true
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = button
-	local padding = Instance.new("UIPadding")
-	padding.PaddingLeft = UDim.new(0, 8)
-	padding.PaddingRight = UDim.new(0, 8)
-	padding.Parent = button
-	button.Parent = parent
-	button.Activated:Connect(onClick)
-	buttons[name] = button
-	return button
-end
-
-function Hud.Build()
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "DebugHud"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = false
-
-	-- Painel de status (canto superior esquerdo)
-	local panel = Instance.new("Frame")
-	panel.Position = UDim2.new(0, 12, 0, 12)
-	panel.Size = UDim2.new(0, 320, 0, 206)
-	panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-	panel.BackgroundTransparency = 0.35
-	panel.Parent = gui
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 12)
-	corner.Parent = panel
-	local pad = Instance.new("UIPadding")
-	pad.PaddingTop = UDim.new(0, 8)
-	pad.PaddingLeft = UDim.new(0, 12)
-	pad.PaddingRight = UDim.new(0, 12)
-	pad.Parent = panel
-	local list = Instance.new("UIListLayout")
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Padding = UDim.new(0, 2)
-	list.Parent = panel
-
-	makeLabel("Cash", panel, 1)
-	makeLabel("Wave", panel, 2)
-	makeLabel("Invasions", panel, 3)
-	makeLabel("Status", panel, 4)
-	makeLabel("Factory", panel, 5)
-	makeLabel("Weapon", panel, 6)
-	makeLabel("Checkpoint", panel, 7).TextColor3 = Color3.fromRGB(190, 190, 190)
-
-	-- Barra de botões (parte de baixo)
-	local bar = Instance.new("Frame")
-	bar.AnchorPoint = Vector2.new(0.5, 1)
-	bar.Position = UDim2.new(0.5, 0, 1, -16)
-	bar.Size = UDim2.new(0, 720, 0, 46)
-	bar.BackgroundTransparency = 1
-	bar.Parent = gui
-	local row = Instance.new("UIListLayout")
-	row.FillDirection = Enum.FillDirection.Horizontal
-	row.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	row.Padding = UDim.new(0, 10)
-	row.Parent = bar
-
-	makeButton("Roll", "Girar", Color3.fromRGB(200, 120, 20), bar, function()
-		local result = call("Roll", maxRolls())
-		if result and result.Ok then
-			local best = result.Results[1]
-			for _, r in result.Results do
-				if r.Tier > best.Tier then
-					best = r
+		local bar = invasionBar
+		if bar then
+			for i = 1, horde.MaxInvasions do
+				local pip = bar:FindFirstChild(tostring(i)) :: Frame?
+				if pip then
+					pip.BackgroundColor3 = if i <= horde.Invasions then T.Bad else T.PanelLight
 				end
 			end
-			local extra = if result.Fused > 0 then ` • {result.Fused} fusões` else ""
-			toast(`Melhor: {Items.DisplayName(best.Key)}{extra}`, Rarity.Get(best.Tier).Color)
 		end
-	end)
-	makeButton("EquipBest", "Equipar melhores", Color3.fromRGB(40, 140, 80), bar, function()
-		local result = call("EquipBest")
-		if result and result.Ok then
-			toast("Robôs atualizados")
-		end
-	end)
-	makeButton("AutoFuse", "Auto-Fundir", Color3.fromRGB(90, 70, 160), bar, function()
-		if not playerData then
-			return
-		end
-		local settings = playerData.Data.Settings
-		local result = call("SetAutoSettings", not settings.AutoFuse, settings.AutoSellBelowTier)
-		if result and result.Ok and result.Fused > 0 then
-			toast(`{result.Fused} fusões feitas`)
-		end
-	end)
-	makeButton("Checkpoint", "Recomeçar checkpoint", Color3.fromRGB(150, 50, 50), bar, function()
-		if playerData then
-			call("StartFromCheckpoint", playerData.Data.Horde.HighestCheckpoint)
-		end
-	end)
+	end
+end
 
-	-- Aviso temporário
-	local t = Instance.new("TextLabel")
-	t.AnchorPoint = Vector2.new(0.5, 1)
-	t.Position = UDim2.new(0.5, 0, 1, -76)
-	t.Size = UDim2.new(0, 520, 0, 34)
-	t.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-	t.BackgroundTransparency = 0.3
-	t.Font = Enum.Font.GothamBold
-	t.TextScaled = true
-	t.Visible = false
-	t.Parent = gui
-	local tc = Instance.new("UICorner")
-	tc.CornerRadius = UDim.new(0, 8)
-	tc.Parent = t
-	toastLabel = t
+function Hud.Build(windows: { [string]: Ui.Window })
+	local gui = Ui.Screen()
 
-	gui.Parent = player:WaitForChild("PlayerGui")
+	-- Painel de status
+	local panel = Ui.Frame(gui, UDim2.fromOffset(270, 176), T.Background, 0.2)
+	panel.Position = UDim2.fromOffset(12, 12)
+	Ui.Corner(panel, 12)
+	Ui.Stroke(panel, T.Stroke, 2)
+	Ui.Padding(panel, 10)
+	Ui.ListLayout(panel, false, 4)
+	labels.Cash = Ui.Label(panel, "💰 0", UDim2.new(1, 0, 0, 30), { Font = T.Font })
+	labels.Wave = Ui.Label(panel, "🧟 Horda 1")
+	local invRow = Ui.Frame(panel, UDim2.new(1, 0, 0, 18), T.Background, 1)
+	Ui.ListLayout(invRow, true, 6)
+	Ui.Label(invRow, "Invasões", UDim2.fromOffset(80, 18), { TextColor3 = T.TextDim })
+	for i = 1, 3 do
+		local pip = Ui.Frame(invRow, UDim2.fromOffset(28, 12), T.PanelLight)
+		pip.Name = tostring(i)
+		pip.LayoutOrder = i
+		Ui.Corner(pip, 4)
+	end
+	invasionBar = invRow
+	labels.Status = Ui.Label(panel, "", UDim2.new(1, 0, 0, 22), { TextColor3 = T.TextDim })
+	labels.Factory = Ui.Label(panel, "🏭 +0/s")
+	labels.Weapon = Ui.Label(panel, "⚔", UDim2.new(1, 0, 0, 20))
+
+	-- Barra de menu
+	local bar = Ui.Frame(gui, UDim2.fromOffset(760, 52), T.Background, 1)
+	bar.AnchorPoint = Vector2.new(0.5, 1)
+	bar.Position = UDim2.new(0.5, 0, 1, -12)
+	local layout = Ui.ListLayout(bar, true, 8)
+	layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+	local entries = {
+		{ "Roll", "🎰 Roleta", T.Accent },
+		{ "Inventory", "🎒 Inventário", T.Info },
+		{ "Robots", "🤖 Robôs", T.Good },
+		{ "Factory", "🏭 Fábrica", Color3.fromRGB(150, 110, 60) },
+		{ "Upgrades", "⬆ Upgrades", T.Purple },
+	}
+	for i, entry in entries do
+		local window = windows[entry[1]]
+		local b = Ui.Button(bar, entry[2], entry[3], function()
+			window.Toggle()
+		end, UDim2.fromOffset(140, 48))
+		b.LayoutOrder = i
+	end
+
+	State.OnChange(refresh)
 	refresh()
 end
 
