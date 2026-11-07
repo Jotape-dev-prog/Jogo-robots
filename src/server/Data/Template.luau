@@ -4,7 +4,7 @@
 
 local Economy = require(game:GetService("ReplicatedStorage").Shared.Config.Economy)
 
-export type PadData = {
+export type RobotData = {
 	Head: string,
 	Torso: string,
 	Arms: string,
@@ -32,7 +32,7 @@ export type PlayerData = {
 		HighestCheckpoint: number,
 	},
 	Inventory: { [string]: number }, -- chave do item → quantidade
-	Pads: { [string]: PadData }, -- "1".."6"
+	Grid: { [string]: RobotData }, -- hexágono ("A1".."D7") → robô; só hexágonos ocupados
 	AvatarWeapon: string, -- arma equipada no avatar ("" = nenhuma)
 	Factory: { Lines: { [string]: WorkerData } }, -- "1-1".."3-2"
 	Upgrades: { [string]: number },
@@ -47,16 +47,8 @@ export type PlayerData = {
 	},
 }
 
-local function emptyPad(): PadData
-	return { Head = "", Torso = "", Arms = "", Legs = "", Weapon = "", Targeting = "Nearest" }
-end
-
-local pads: { [string]: PadData } = {}
-for i = 1, Economy.MaxPads do
-	pads[tostring(i)] = emptyPad()
-end
--- Kit inicial no pad 1: robô de sucata com espada.
-pads["1"] = {
+-- Kit inicial: robô de sucata com espada na fileira da frente.
+local starterRobot: RobotData = {
 	Head = "Part:Head:1",
 	Torso = "Part:Torso:1",
 	Arms = "Part:Arms:1",
@@ -71,7 +63,7 @@ for _, id in Economy.FactoryLineIds() do
 end
 
 local Template: PlayerData = {
-	DataVersion = 1,
+	DataVersion = 2,
 	Cash = Economy.StartingCash,
 	TotalEarned = 0,
 	Rebirths = 0,
@@ -83,10 +75,10 @@ local Template: PlayerData = {
 		["Part:Legs:1"] = 1,
 		["Weapon:Sword:1"] = 2, -- uma para o robô do pad 1, outra para o avatar
 	},
-	Pads = pads,
+	Grid = { A1 = starterRobot },
 	AvatarWeapon = "Weapon:Sword:1",
 	Factory = { Lines = lines },
-	Upgrades = { KillValue = 0, Rolls = 0, Luck = 0, Pads = 0 },
+	Upgrades = { KillValue = 0, Rolls = 0, Luck = 0, Grid = 0 },
 	Settings = { AutoFuse = false, AutoSellBelowTier = 0 },
 	Stats = { Kills = 0, Rolls = 0, Defeats = 0 },
 }

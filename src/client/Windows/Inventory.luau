@@ -8,6 +8,7 @@ local Shared = ReplicatedStorage.Shared
 local Items = require(Shared.Config.Items)
 local Rarity = require(Shared.Config.Rarity)
 local Economy = require(Shared.Config.Economy)
+local Grid = require(Shared.Config.Grid)
 
 local Ui = require(script.Parent.Parent.Ui)
 local State = require(script.Parent.Parent.State)
@@ -53,12 +54,12 @@ local function equipTargets(data: any, key: string): { { Label: string, Call: ()
 			end,
 		})
 	end
-	for i = 1, Common.UnlockedPads(data) do
-		local pad = tostring(i)
+	for _, cell in Grid.UnlockedCells(Common.Columns(data)) do
+		local occupied = data.Grid[cell] ~= nil
 		table.insert(targets, {
-			Label = `Pad {i}`,
+			Label = if occupied then `🤖 {cell}` else `+ {cell}`,
 			Call = function()
-				State.Call("Equip", pad, item.Slot, key)
+				State.Call("Equip", cell, item.Slot, key)
 			end,
 		})
 	end

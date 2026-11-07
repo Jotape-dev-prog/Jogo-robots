@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Grid = require(ReplicatedStorage.Shared.Config.Grid)
 
 local Ui = require(script.Parent.Parent.Ui)
 local State = require(script.Parent.Parent.State)
@@ -36,10 +37,11 @@ local DEFS = {
 		end,
 	},
 	{
-		Name = "Pads",
-		Title = "🛡 Pads de defesa",
+		Name = "Grid",
+		Title = "🗺 Colunas do grid",
 		Effect = function(l: number)
-			return `{Economy.StartPads + l} pads`
+			local columns = Grid.Columns(l)
+			return `{columns} colunas ({columns * #Grid.Rows} robôs)`
 		end,
 	},
 }

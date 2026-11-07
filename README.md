@@ -22,15 +22,16 @@ src/
     Config/Items        peças (Cabeça/Torso/Braços/Pernas) e armas (Espada/Martelo/Rifle)
     Config/Economy      custos, upgrades, perdas (10% derrota / 5% PvP)
     Config/Horde        escalonamento das hordas, boss a cada 10, limite de 15 vivos
+    Config/Grid         grid hexagonal 4 fileiras × 2..7 colunas (A = frente)
     Net                 nomes dos remotes
   server/              → ServerScriptService.Server
     Data/Template       estrutura salva do jogador
     Services/
       DataService       ProfileStore (session lock) + Replica (sincroniza com o cliente)
       RemoteGuard       entrada única do cliente: validação, rate limit, pcall
-      BaseService       5 bases ao redor do centro (gera placeholder se o mapa não tiver)
-      RobotService      robôs nos pads, HP por raridade, targeting, cone / área+stun / pierce
-      HordeService      horda instanciada, fila de spawn, invasões, derrota, checkpoints
+      BaseService       5 bases ao redor do centro, grid hexagonal e ponto A (gera placeholder)
+      RobotService      robôs do grid: perseguem zumbis, voltam ao hexágono a cada horda (mantendo a vida)
+      HordeService      horda instanciada, zumbis sem trilha (zigue-zague + separação), invasões, checkpoints
       InventoryService  roleta, forja 3→1, venda, auto-fundir/vender, equipar, upgrades
   client/              → StarterPlayerScripts.Client
     Hud                 HUD provisório para testes (será trocado pelas telas do Figma)

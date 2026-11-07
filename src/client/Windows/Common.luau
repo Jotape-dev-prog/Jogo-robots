@@ -7,6 +7,7 @@ local Shared = ReplicatedStorage.Shared
 local Items = require(Shared.Config.Items)
 local Rarity = require(Shared.Config.Rarity)
 local Economy = require(Shared.Config.Economy)
+local Grid = require(Shared.Config.Grid)
 
 local Ui = require(script.Parent.Parent.Ui)
 
@@ -71,15 +72,23 @@ function Common.StatsText(key: string): string
 	)
 end
 
-function Common.UnlockedPads(data: any): number
-	return math.min(Economy.StartPads + (data.Upgrades.Pads or 0), Economy.MaxPads)
+function Common.Columns(data: any): number
+	return Grid.Columns(data.Upgrades.Grid)
 end
 
--- Quantas cópias estão em uso (pads, avatar, fábrica). Espelha DataService.EquippedCount.
+function Common.RobotCount(data: any): number
+	local n = 0
+	for _ in data.Grid do
+		n += 1
+	end
+	return n
+end
+
+-- Quantas cópias estão em uso (robôs do grid, avatar, fábrica). Espelha DataService.EquippedCount.
 function Common.EquippedCount(data: any, key: string): number
 	local count = if data.AvatarWeapon == key then 1 else 0
-	for _, pad in data.Pads do
-		for _, v in pad do
+	for _, robot in data.Grid do
+		for _, v in robot do
 			if v == key then
 				count += 1
 			end

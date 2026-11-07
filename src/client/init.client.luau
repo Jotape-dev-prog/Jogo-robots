@@ -6,6 +6,7 @@ local Ui = require(script.Ui)
 local SoundController = require(script.SoundController)
 local Hud = require(script.Hud)
 local CombatController = require(script.CombatController)
+local GridController = require(script.GridController)
 
 local Windows = script.Windows
 local Roll = require(Windows.Roll)
@@ -40,5 +41,13 @@ game:GetService("ProximityPromptService").PromptTriggered:Connect(function(promp
 end)
 Defeat.Create()
 CombatController.Start()
+
+-- Arrastar robôs no mundo 3D; clique simples abre o grid com o hexágono selecionado.
+GridController.SetOnClickCell(function(cell)
+	Robots.Select(cell)
+	windows.Robots.Open()
+	Robots.Select(cell)
+end)
+GridController.Start()
 
 State.Start() -- por último: começa a receber os dados do servidor

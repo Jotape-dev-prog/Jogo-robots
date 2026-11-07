@@ -10,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Net = require(ReplicatedStorage.Shared.Net)
 local Sound = require(script.Parent.SoundController)
+local GridController = require(script.Parent.GridController)
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -94,8 +95,13 @@ function CombatController.Start()
 		if gameProcessed then
 			return
 		end
-		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.KeyCode == Enum.KeyCode.F then
+		if input.KeyCode == Enum.KeyCode.F then
 			task.spawn(attack)
+		elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+			-- Clique sobre o grid/robôs da base é para posicionar, não para atacar.
+			if not GridController.HitCell(input.Position) then
+				task.spawn(attack)
+			end
 		end
 	end)
 	-- Botão na tela para celular e gatilho do controle.

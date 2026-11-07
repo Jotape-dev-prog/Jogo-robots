@@ -11,6 +11,8 @@ export type Zombie = {
 	ContactDps: number,
 	Position: Vector3,
 	StunnedUntil: number,
+	Seed: number, -- fase do zigue-zague (cada zumbi anda diferente)
+	Facing: Vector3,
 	Part: BasePart,
 	Dead: boolean,
 }

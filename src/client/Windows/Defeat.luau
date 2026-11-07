@@ -67,7 +67,8 @@ end
 
 function Defeat.Create()
 	local gui = Ui.Screen()
-	overlay = Ui.Frame(gui, UDim2.fromOffset(560, 230), T.Background, 0.05)
+	overlay = Ui.Frame(gui, UDim2.fromOffset(560, 0), T.Background, 0.05)
+	overlay.AutomaticSize = Enum.AutomaticSize.Y
 	overlay.AnchorPoint = Vector2.new(0.5, 0.5)
 	overlay.Position = UDim2.fromScale(0.5, 0.42)
 	overlay.Visible = false
@@ -87,7 +88,10 @@ function Defeat.Create()
 		TextColor3 = T.Text,
 		TextXAlignment = Enum.TextXAlignment.Center,
 	})
-	buttons = Ui.Grid(overlay, UDim2.new(1, 0, 0, 96), UDim2.fromOffset(110, 40), 8)
+	title.LayoutOrder = 1
+	subtitle.LayoutOrder = 2
+	buttons = Ui.Grid(overlay, UDim2.new(1, 0, 0, 92), UDim2.fromOffset(110, 40), 8)
+	buttons.LayoutOrder = 5
 	local close = Ui.Button(overlay, "Fechar", T.PanelLight, function()
 		manualOpen = false
 		overlay.Visible = false

@@ -1,13 +1,18 @@
 --!strict
--- Robôs nos Pads de Defesa: montagem visual (provisória), HP por raridade, targeting e ataques.
--- HP = soma das peças; se zerar, o robô fica "quebrado" até o início da próxima horda (sem custo).
+-- Robôs do grid hexagonal (estilo auto-battler):
+--   • Cada hexágono liberado comporta 1 robô (dados em PlayerData.Grid).
+--   • Durante a horda os robôs saem do hexágono e perseguem os zumbis conforme o modo de mira;
+--     armas corpo a corpo chegam perto, o rifle mantém distância.
+--   • No início de cada horda voltam ao seu hexágono MANTENDO a vida com que terminaram a anterior.
+--     Robô destruído volta com 100% (regra do GDD: sem custo). Na derrota, todos são curados.
+--   • HP = soma das peças × multiplicador do tier. Pernas aumentam a velocidade.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage.Shared
 local Rarity = require(Shared.Config.Rarity)
 local Items = require(Shared.Config.Items)
-local Economy = require(Shared.Config.Economy)
+local Grid = require(Shared.Config.Grid)
 
 local Types = require(script.Parent.Parent.Types)
 local Combat = require(script.Parent.Parent.Combat)
@@ -18,47 +23,141 @@ local BaseService = require(script.Parent.BaseService)
 type Zombie = Types.Zombie
 
 export type Robot = {
-	Pad: string,
+	Cell: string,
+	Home: Vector3,
 	Position: Vector3,
+	Facing: Vector3,
 	Model: Model?,
+	Root: BasePart?,
+	HpBar: Frame?,
 	Hp: number,
 	MaxHp: number,
 	Weapon: Items.WeaponStats?,
 	Damage: number,
+	Speed: number,
 	NextAttack: number,
 	Broken: boolean,
 }
 
 -- Callback para avisar mudanças de HP (HordeService repassa para a UI).
-type HpListener = (player: Player, pad: string, hp: number, maxHp: number) -> ()
+type HpListener = (player: Player, cell: string, hp: number, maxHp: number) -> ()
+
+local BASE_SPEED = 8
+local SEPARATION = 3.2 -- distância mínima entre robôs
+local ROBOT_HEIGHT_OFFSET = 0.2
 
 local RobotService = {}
 
 local robots: { [Player]: { [string]: Robot } } = {}
 local hpListener: HpListener? = nil
 
-local function computeStats(pad: { [string]: string }): (number, Items.WeaponStats?, number)
+local function computeStats(loadout: { [string]: string }): (number, Items.WeaponStats?, number, number)
 	local hp = 0
 	for _, slot in Items.PartSlots do
-		local item = Items.Parse(pad[slot])
+		local item = Items.Parse(loadout[slot])
 		if item then
 			hp += (Items.PartBaseHp :: any)[slot] * Rarity.Multiplier(item.Tier)
 		end
 	end
-	local weaponItem = Items.Parse(pad.Weapon)
+	local legs = Items.Parse(loadout.Legs)
+	local speed = BASE_SPEED * (if legs then 1 + 0.12 * (legs.Tier - 1) else 0.75)
+	local weaponItem = Items.Parse(loadout.Weapon)
 	if not weaponItem then
-		return hp, nil, 0
+		return hp, nil, 0, speed
 	end
 	local weapon = Items.Weapons[weaponItem.Type]
-	return math.max(hp, 10), weapon, weapon.Damage * Rarity.Multiplier(weaponItem.Tier)
+	return math.max(hp, 10), weapon, weapon.Damage * Rarity.Multiplier(weaponItem.Tier), speed
+end
+
+local function columnsOf(player: Player): number
+	local data = DataService.Get(player)
+	return Grid.Columns(if data then data.Upgrades.Grid else 0)
+end
+
+local function cellPosition(player: Player, cell: string): Vector3?
+	local base = BaseService.Get(player)
+	if not base then
+		return nil
+	end
+	return (base.GridOrigin * CFrame.new(Grid.LocalOffset(cell))).Position
+end
+
+-- Cor dos hexágonos: liberado (aço), bloqueado (quase invisível).
+local function paintCells(player: Player)
+	local base = BaseService.Get(player)
+	if not base then
+		return
+	end
+	local columns = columnsOf(player)
+	for cell, hex in base.Cells do
+		local unlocked = Grid.IsUnlocked(cell, columns)
+		for _, p in hex:GetDescendants() do
+			if p:IsA("BasePart") then
+				p.Transparency = if unlocked then 0 else 0.8
+				p.Color = if unlocked then Color3.fromRGB(80, 88, 100) else Color3.fromRGB(40, 40, 45)
+			end
+		end
+	end
+end
+
+local function makeHpBar(root: BasePart): Frame
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "HpBar"
+	gui.Size = UDim2.fromOffset(60, 8)
+	gui.StudsOffset = Vector3.new(0, 7.8, 0)
+	gui.MaxDistance = 90
+	local back = Instance.new("Frame")
+	back.Size = UDim2.fromScale(1, 1)
+	back.BackgroundColor3 = Color3.fromRGB(30, 25, 22)
+	back.BorderSizePixel = 0
+	back.Parent = gui
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.BackgroundColor3 = Color3.fromRGB(80, 200, 100)
+	fill.BorderSizePixel = 0
+	fill.Parent = back
+	gui.Parent = root
+	return fill
+end
+
+local function updateVisualHp(robot: Robot)
+	local bar = robot.HpBar
+	if bar then
+		local ratio = if robot.MaxHp > 0 then robot.Hp / robot.MaxHp else 0
+		bar.Size = UDim2.fromScale(math.clamp(ratio, 0, 1), 1)
+		bar.BackgroundColor3 = if ratio > 0.5
+			then Color3.fromRGB(80, 200, 100)
+			elseif ratio > 0.25 then Color3.fromRGB(230, 180, 50)
+			else Color3.fromRGB(220, 70, 60)
+	end
+	if robot.Model then
+		for _, p in robot.Model:GetDescendants() do
+			if p:IsA("BasePart") and p.Name ~= "Root" then
+				p.Transparency = if robot.Broken then 0.75 else 0
+			end
+		end
+	end
+end
+
+local function notify(player: Player, robot: Robot)
+	updateVisualHp(robot)
+	if hpListener then
+		hpListener(player, robot.Cell, robot.Hp, robot.MaxHp)
+	end
 end
 
 function RobotService.SetHpListener(listener: HpListener)
 	hpListener = listener
 end
 
--- Recria o robô de um pad a partir dos dados salvos.
-function RobotService.RefreshPad(player: Player, padId: string)
+--------------------------------------------------------------------------------
+-- Montagem
+--------------------------------------------------------------------------------
+
+-- Recria o robô de um hexágono a partir dos dados salvos.
+-- Se já existia, preserva a proporção de vida (trocar peça no meio da horda não cura).
+function RobotService.RefreshCell(player: Player, cell: string)
 	local data = DataService.Get(player)
 	local base = BaseService.Get(player)
 	if not data or not base then
@@ -69,75 +168,86 @@ function RobotService.RefreshPad(player: Player, padId: string)
 		perPlayer = {}
 		robots[player] = perPlayer
 	end
-	local old = perPlayer[padId]
+	local old = perPlayer[cell]
 	if old and old.Model then
 		old.Model:Destroy()
 	end
-	perPlayer[padId] = nil
+	perPlayer[cell] = nil
 
-	local unlocked = math.min(Economy.StartPads + (data.Upgrades.Pads or 0), Economy.MaxPads)
-	local padPart = base.Pads[padId]
-	local padIndex = tonumber(padId) or math.huge
-	if padIndex > unlocked or not padPart then
-		if padPart then
-			padPart.Transparency = 0.7
+	local loadout = (data.Grid :: any)[cell]
+	if not loadout or not Grid.IsUnlocked(cell, columnsOf(player)) then
+		if hpListener then
+			hpListener(player, cell, 0, 0)
 		end
 		return
 	end
-	padPart.Transparency = 0
-
-	local padData = (data.Pads :: any)[padId]
-	local maxHp, weapon, damage = computeStats(padData)
+	local maxHp, weapon, damage, speed = computeStats(loadout)
 	if maxHp <= 0 and not weapon then
 		return
 	end
 
-	local top = padPart.Position + Vector3.new(0, padPart.Size.X / 2, 0)
-	local facing = CFrame.lookAt(top, Vector3.new(base.Spawn.X, top.Y, base.Spawn.Z))
-	local model = Models.Robot(padData, facing)
+	local home = cellPosition(player, cell) :: Vector3
+	local position = if old then old.Position else home
+	local facing = -base.GridOrigin.LookVector -- de frente para o ponto A
+	local model = Models.Robot(loadout, CFrame.lookAt(position, position + facing))
+	model:SetAttribute("Cell", cell)
+	model:SetAttribute("OwnerUserId", player.UserId)
 	model.Parent = base.Robots
+	local root = model.PrimaryPart
 
-	perPlayer[padId] = {
-		Pad = padId,
-		Position = top,
+	local hp = maxHp
+	local broken = false
+	if old then
+		local ratio = if old.MaxHp > 0 then old.Hp / old.MaxHp else 1
+		hp = maxHp * ratio
+		broken = old.Broken
+	end
+
+	local robot: Robot = {
+		Cell = cell,
+		Home = home,
+		Position = position,
+		Facing = facing,
 		Model = model,
-		Hp = maxHp,
+		Root = root,
+		HpBar = if root then makeHpBar(root) else nil,
+		Hp = hp,
 		MaxHp = maxHp,
 		Weapon = weapon,
 		Damage = damage,
+		Speed = speed,
 		NextAttack = 0,
-		Broken = false,
+		Broken = broken,
 	}
-	if hpListener then
-		hpListener(player, padId, maxHp, maxHp)
-	end
+	perPlayer[cell] = robot
+	notify(player, robot)
 end
 
 function RobotService.RefreshAll(player: Player)
-	for i = 1, Economy.MaxPads do
-		RobotService.RefreshPad(player, tostring(i))
+	paintCells(player)
+	for _, cell in Grid.AllCells() do
+		RobotService.RefreshCell(player, cell)
 	end
 end
 
--- Início de horda: todos os robôs voltam com 100% de HP, sem custo.
-function RobotService.RestoreAll(player: Player)
-	local perPlayer = robots[player]
-	if not perPlayer then
-		return
+-- Início de horda: todos voltam ao hexágono. Vida é mantida; destruídos voltam com 100%.
+function RobotService.ResetForWave(player: Player)
+	for _, robot in robots[player] or {} do
+		robot.Position = robot.Home
+		if robot.Broken then
+			robot.Broken = false
+			robot.Hp = robot.MaxHp
+		end
+		notify(player, robot)
 	end
-	for padId, robot in perPlayer do
-		robot.Hp = robot.MaxHp
+end
+
+-- Cura total (usado na derrota, quando o jogo recomeça do checkpoint).
+function RobotService.HealAll(player: Player)
+	for _, robot in robots[player] or {} do
 		robot.Broken = false
-		if robot.Model then
-			for _, p in robot.Model:GetDescendants() do
-				if p:IsA("BasePart") then
-					p.Transparency = 0
-				end
-			end
-		end
-		if hpListener then
-			hpListener(player, padId, robot.Hp, robot.MaxHp)
-		end
+		robot.Hp = robot.MaxHp
+		notify(player, robot)
 	end
 end
 
@@ -152,93 +262,196 @@ function RobotService.Damage(player: Player, robot: Robot, amount: number)
 	robot.Hp = math.max(0, robot.Hp - amount)
 	if robot.Hp <= 0 then
 		robot.Broken = true
-		if robot.Model then
-			for _, p in robot.Model:GetDescendants() do
-				if p:IsA("BasePart") then
-					p.Transparency = 0.75
-				end
-			end
-		end
 	end
-	if hpListener then
-		hpListener(player, robot.Pad, robot.Hp, robot.MaxHp)
-	end
+	notify(player, robot)
 end
 
 --------------------------------------------------------------------------------
--- Combate
+-- Movimento e combate
 --------------------------------------------------------------------------------
 
-local function flatDistance(a: Vector3, b: Vector3): number
-	return Vector3.new(a.X - b.X, 0, a.Z - b.Z).Magnitude
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
 end
 
-local function pickTarget(robot: Robot, mode: string, zombies: { Zombie }, range: number): Zombie?
+local function pickTarget(robot: Robot, mode: string, zombies: { Zombie }): Zombie?
 	local best: Zombie? = nil
 	local bestScore = -math.huge
 	for _, z in zombies do
 		if not z.Dead then
-			local dist = flatDistance(robot.Position, z.Position)
-			if dist <= range then
-				local score
-				if mode == "Boss" then
-					score = (if z.Kind == "Boss" then 1e9 elseif z.Kind == "Tank" then 1e6 else 0) + z.Hp
-				elseif mode == "Ranged" then
-					score = dist -- mais distante dentro do alcance
-				else
-					score = -dist -- mais próximo
-				end
-				if score > bestScore then
-					best, bestScore = z, score
-				end
+			local dist = flat(z.Position - robot.Position).Magnitude
+			local score
+			if mode == "Boss" then
+				score = (if z.Kind == "Boss" then 1e9 elseif z.Kind == "Tank" then 1e6 else 0) - dist
+			elseif mode == "Ranged" then
+				score = dist -- mais distante (persegue quem está mais longe / perto do ponto A)
+			else
+				score = -dist -- mais próximo
+			end
+			if score > bestScore then
+				best, bestScore = z, score
 			end
 		end
 	end
 	return best
 end
 
+-- Distância que cada arma tenta manter do alvo.
+local function engageDistance(weapon: Items.WeaponStats): number
+	if weapon.Pattern == "Line" then
+		return weapon.Range * 0.75
+	elseif weapon.Pattern == "Circle" then
+		return weapon.Range * 0.45
+	end
+	return weapon.Range * 0.55
+end
+
+-- Mantém dentro do chão da base (espaço local do núcleo).
+local function clampToBase(base: BaseService.Base, position: Vector3): Vector3
+	local localPos = base.Frame:PointToObjectSpace(position)
+	local b = base.Bounds
+	local clamped = Vector3.new(
+		math.clamp(localPos.X, b.MinX, b.MaxX),
+		localPos.Y,
+		math.clamp(localPos.Z, b.MinZ, b.MaxZ)
+	)
+	return base.Frame:PointToWorldSpace(clamped)
+end
+
 type DealDamage = (zombie: Zombie, amount: number, stun: number?) -> ()
 
--- Executa os ataques dos robôs prontos. Chamado pelo loop da horda.
-function RobotService.Step(player: Player, zombies: { Zombie }, now: number, dealDamage: DealDamage)
+-- Um passo da simulação: move cada robô e executa os ataques prontos.
+function RobotService.Step(
+	player: Player,
+	zombies: { Zombie },
+	now: number,
+	dt: number,
+	dealDamage: DealDamage
+)
 	local perPlayer = robots[player]
 	local data = DataService.Get(player)
-	if not perPlayer or not data then
+	local base = BaseService.Get(player)
+	if not perPlayer or not data or not base then
 		return
 	end
-	for padId, robot in perPlayer do
+
+	local parts: { BasePart } = {}
+	local frames: { CFrame } = {}
+	for cell, robot in perPlayer do
 		local weapon = robot.Weapon
-		if weapon and not robot.Broken and now >= robot.NextAttack then
-			local mode = (data.Pads :: any)[padId].Targeting
-			local target = pickTarget(robot, mode, zombies, weapon.Range)
-			if target then
+		if robot.Broken then
+			continue
+		end
+		local destination = robot.Home
+		local target: Zombie? = nil
+		if weapon then
+			local loadout = (data.Grid :: any)[cell]
+			target = pickTarget(robot, if loadout then loadout.Targeting else "Nearest", zombies)
+		end
+
+		local move = Vector3.zero
+		if target and weapon then
+			local toTarget = flat(target.Position - robot.Position)
+			local dist = toTarget.Magnitude
+			robot.Facing = if dist > 0.01 then toTarget.Unit else robot.Facing
+			local want = engageDistance(weapon)
+			if dist > want then
+				move = toTarget.Unit * math.min(robot.Speed * dt, dist - want)
+			end
+			if dist <= weapon.Range and now >= robot.NextAttack then
 				robot.NextAttack = now + weapon.Cooldown
-				local toTarget =
-					Vector3.new(target.Position.X - robot.Position.X, 0, target.Position.Z - robot.Position.Z)
-				local dir = if toTarget.Magnitude > 0 then toTarget.Unit else Vector3.zAxis
-				for _, z in Combat.Resolve(weapon, robot.Position, dir, zombies, target) do
+				for _, z in Combat.Resolve(weapon, robot.Position, robot.Facing, zombies, target) do
 					dealDamage(z, robot.Damage, weapon.Stun)
 				end
+			end
+		else
+			-- Sem alvo: volta caminhando para o hexágono.
+			local toHome = flat(destination - robot.Position)
+			if toHome.Magnitude > 0.5 then
+				move = toHome.Unit * math.min(robot.Speed * dt, toHome.Magnitude)
+				robot.Facing = toHome.Unit
+			end
+		end
 
-				if robot.Model and robot.Model.PrimaryPart then
-					local pivot = robot.Model:GetPivot()
-					robot.Model:PivotTo(CFrame.lookAt(pivot.Position, pivot.Position + dir))
+		-- Separação: não empilhar robôs no mesmo ponto.
+		for otherCell, other in perPlayer do
+			if otherCell ~= cell and not other.Broken then
+				local away = flat(robot.Position - other.Position)
+				local d = away.Magnitude
+				if d > 0.01 and d < SEPARATION then
+					move += away.Unit * (SEPARATION - d) * 0.5
 				end
 			end
 		end
+
+		if move.Magnitude > 0 or robot.Root then
+			robot.Position = clampToBase(base, robot.Position + move)
+			local root = robot.Root
+			if root then
+				local ground =
+					Vector3.new(robot.Position.X, robot.Home.Y + ROBOT_HEIGHT_OFFSET, robot.Position.Z)
+				table.insert(parts, root)
+				table.insert(frames, CFrame.lookAt(ground, ground + robot.Facing))
+			end
+		end
+	end
+	if #parts > 0 then
+		workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
 	end
 end
 
-function RobotService.Clear(player: Player)
-	local perPlayer = robots[player]
-	if perPlayer then
-		for _, robot in perPlayer do
+-- Move robôs mesmo fora da horda (voltar para casa nos intervalos).
+function RobotService.Idle(player: Player, now: number, dt: number)
+	RobotService.Step(player, {}, now, dt, function() end)
+end
+
+--------------------------------------------------------------------------------
+-- Grid: mover / trocar robôs de hexágono
+--------------------------------------------------------------------------------
+
+-- Troca o conteúdo de dois hexágonos (mover para vazio ou trocar de lugar).
+function RobotService.MoveRobot(player: Player, from: string, to: string): boolean
+	local data = DataService.Get(player)
+	if not data then
+		return false
+	end
+	local grid = data.Grid :: any
+	local a, b = grid[from], grid[to]
+	if not a then
+		return false
+	end
+	DataService.Set(player, { "Grid", to }, a)
+	DataService.Set(player, { "Grid", from }, b)
+
+	-- Mantém o robô vivo (posição e vida) ao trocar a casa dele.
+	local perPlayer = robots[player] or {}
+	local ra, rb = perPlayer[from], perPlayer[to]
+	perPlayer[to], perPlayer[from] = ra, rb
+	for cell, robot in { [to] = ra, [from] = rb } :: { [string]: Robot? } do
+		if robot then
+			robot.Cell = cell
+			robot.Home = cellPosition(player, cell) :: Vector3
 			if robot.Model then
-				robot.Model:Destroy()
+				robot.Model:SetAttribute("Cell", cell)
 			end
+			notify(player, robot)
+		end
+	end
+	if not rb and hpListener then
+		hpListener(player, from, 0, 0)
+	end
+	return true
+end
+
+function RobotService.Clear(player: Player)
+	for _, robot in robots[player] or {} do
+		if robot.Model then
+			robot.Model:Destroy()
 		end
 	end
 	robots[player] = nil
 end
+
+RobotService.PaintCells = paintCells
 
 return RobotService

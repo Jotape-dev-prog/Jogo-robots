@@ -163,7 +163,8 @@ function Models.Weapon(parent: Instance, key: string, grip: CFrame, scale: numbe
 	return m
 end
 
--- Robô completo a partir das peças equipadas. `base` = chão do pad, olhando para os zumbis.
+-- Robô completo a partir das peças equipadas. `base` = chão sob o robô, olhando para os zumbis.
+-- A peça "Root" (invisível, ancorada) é o PrimaryPart: mover ela move o robô inteiro.
 function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 	local m = Instance.new("Model")
 	m.Name = "Robot"
@@ -239,10 +240,20 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 		end
 	end
 
-	local primary = m:FindFirstChild("Torso") or m:FindFirstChildWhichIsA("BasePart", true)
-	if primary and primary:IsA("BasePart") then
-		m.PrimaryPart = primary
+	-- Raiz invisível ancorada; o resto é soldado nela para o robô andar com um único CFrame.
+	local root = block(m, "Root", Vector3.new(1, 1, 1), base, Color3.new(), Enum.Material.SmoothPlastic)
+	root.Transparency = 1
+	for _, p in m:GetDescendants() do
+		if p:IsA("BasePart") and p ~= root then
+			p.Anchored = false
+			p.Massless = true
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = root
+			weld.Part1 = p
+			weld.Parent = p
+		end
 	end
+	m.PrimaryPart = root
 	return m
 end
 

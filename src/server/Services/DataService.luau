@@ -34,9 +34,44 @@ local DataService = {}
 
 local CURRENT_VERSION = Template.DataVersion
 
-local function migrate(data: PlayerData)
-	-- Exemplo para o futuro:
-	-- if data.DataVersion < 2 then ... data.DataVersion = 2 end
+local function migrate(data: any)
+	-- v1 → v2: pads fixos (1..6) viram robôs no grid hexagonal.
+	-- Reconcile já criou um Grid com o robô inicial; ele é substituído pelos robôs que o jogador tinha.
+	if (data.DataVersion or 1) < 2 then
+		if data.Pads then
+			local grid = {}
+			local cells = { "A1", "B1", "C1", "D1", "A2", "B2" } -- cabem nas 2 colunas iniciais
+			for i, cell in cells do
+				local pad = data.Pads[tostring(i)]
+				if
+					pad
+					and (
+						pad.Weapon ~= ""
+						or pad.Torso ~= ""
+						or pad.Head ~= ""
+						or pad.Arms ~= ""
+						or pad.Legs ~= ""
+					)
+				then
+					grid[cell] = {
+						Head = pad.Head,
+						Torso = pad.Torso,
+						Arms = pad.Arms,
+						Legs = pad.Legs,
+						Weapon = pad.Weapon,
+						Targeting = pad.Targeting or "Nearest",
+					}
+				end
+			end
+			data.Grid = grid
+			data.Pads = nil
+		end
+		if data.Upgrades then
+			data.Upgrades.Grid = math.min(data.Upgrades.Pads or 0, 5)
+			data.Upgrades.Pads = nil
+		end
+		data.DataVersion = 2
+	end
 	data.DataVersion = CURRENT_VERSION
 end
 
@@ -232,15 +267,15 @@ function DataService.ItemCount(player: Player, key: string): number
 	return if data then data.Inventory[key] or 0 else 0
 end
 
--- Quantas cópias do item estão em uso (pads, avatar e trabalhadores da fábrica).
+-- Quantas cópias do item estão em uso (robôs do grid, avatar e trabalhadores da fábrica).
 function DataService.EquippedCount(player: Player, key: string): number
 	local data = DataService.Get(player)
 	if not data then
 		return 0
 	end
 	local count = if data.AvatarWeapon == key then 1 else 0
-	for _, pad in data.Pads do
-		for _, slotKey in pad :: any do
+	for _, robot in data.Grid do
+		for _, slotKey in robot :: any do
 			if slotKey == key then
 				count += 1
 			end

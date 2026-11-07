@@ -1,13 +1,15 @@
 --!strict
 -- 5 bases ao redor do centro. Cada jogador recebe uma base livre.
 -- Se o mapa não tiver Workspace.Bases.BaseN, gera uma base provisória (placeholder) com:
---   Spawn (de onde os zumbis saem), Core (o que eles invadem) e Pads 1..6.
+--   Spawn (área larga na frente: o "ponto A" de onde os zumbis saem), Core (o que eles invadem),
+--   GridOrigin (centro do grid hexagonal; +Z aponta para os zumbis) e o grid de hexágonos.
+-- Não há trilha: zumbis e robôs andam livremente dentro dos limites da base.
 -- Quando o mapa definitivo for modelado, basta manter esses nomes.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local Economy = require(ReplicatedStorage.Shared.Config.Economy)
+local Grid = require(ReplicatedStorage.Shared.Config.Grid)
 local DataService = require(script.Parent.DataService)
 
 local BASE_COUNT = 5
@@ -18,12 +20,18 @@ export type Base = {
 	Index: number,
 	Frame: CFrame, -- origem no núcleo, LookVector apontando para o centro do mapa
 	Model: Model,
-	Spawn: Vector3,
+	Spawn: Vector3, -- centro do ponto A
+	SpawnHalfWidth: number,
 	Core: Vector3,
-	Pads: { [string]: BasePart },
+	GridOrigin: CFrame,
+	Cells: { [string]: Model }, -- "A1".."D7"
+	Bounds: { MinX: number, MaxX: number, MinZ: number, MaxZ: number }, -- no espaço local de Frame
 	Zombies: Folder,
 	Robots: Folder,
 }
+
+local SPAWN_HALF_WIDTH = 22
+local GRID_Z = -15 -- centro do grid no espaço da base (núcleo em -60, ponto A em +65)
 
 local BaseService = {}
 
@@ -44,6 +52,7 @@ local function part(props: { [string]: any }, parent: Instance): Part
 end
 
 -- Gera a geometria provisória de uma base, virada para o centro do mapa.
+-- Espaço local: núcleo em Z = -60 (lado do centro), ponto A em Z = +65 (lado de fora).
 local function buildPlaceholder(index: number, parent: Instance): Model
 	local angle = math.rad((index - 1) * (360 / BASE_COUNT))
 	local position = Vector3.new(math.cos(angle) * BASE_RADIUS, GROUND_Y, math.sin(angle) * BASE_RADIUS)
@@ -60,15 +69,8 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		Color = Color3.fromRGB(110, 105, 95),
 	}, model)
 	part({
-		Name = "Path",
-		Size = Vector3.new(8, 0.2, 120),
-		CFrame = frame * CFrame.new(0, 1.1, -5),
-		Material = Enum.Material.Ground,
-		Color = Color3.fromRGB(95, 70, 50),
-	}, model)
-	part({
 		Name = "Spawn",
-		Size = Vector3.new(10, 0.4, 10),
+		Size = Vector3.new(SPAWN_HALF_WIDTH * 2, 0.4, 6),
 		CFrame = frame * CFrame.new(0, 1.2, 65), -- lado de fora
 		Material = Enum.Material.Neon,
 		Color = Color3.fromRGB(120, 40, 40),
@@ -157,26 +159,51 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		"Inventory"
 	)
 
-	local pads = Instance.new("Folder")
-	pads.Name = "Pads"
-	pads.Parent = model
-	local padOffsets = {
-		Vector3.new(-12, 0, 30),
-		Vector3.new(12, 0, 30),
-		Vector3.new(-12, 0, 5),
-		Vector3.new(12, 0, 5),
-		Vector3.new(-12, 0, -20),
-		Vector3.new(12, 0, -20),
-	}
-	for i, offset in padOffsets do
-		part({
-			Name = tostring(i),
-			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(0.6, 9, 9),
-			CFrame = frame * CFrame.new(offset + Vector3.new(0, 1.3, 0)) * CFrame.Angles(0, 0, math.rad(90)),
-			Material = Enum.Material.DiamondPlate,
-			Color = Color3.fromRGB(80, 80, 85),
-		}, pads)
+	-- Grid hexagonal: cada hexágono é um Model com 3 placas giradas (forma de colmeia).
+	local origin = part({
+		Name = "GridOrigin",
+		Size = Vector3.new(1, 1, 1),
+		CFrame = frame * CFrame.new(0, 1.05, GRID_Z),
+		Transparency = 1,
+		CanCollide = false,
+		CanQuery = false,
+	}, model)
+	local gridFolder = Instance.new("Folder")
+	gridFolder.Name = "Grid"
+	gridFolder.Parent = model
+	local side = Grid.HexRadius
+	for _, cell in Grid.AllCells() do
+		local hex = Instance.new("Model")
+		hex.Name = cell
+		hex:SetAttribute("Cell", cell)
+		local center = origin.CFrame * CFrame.new(Grid.LocalOffset(cell))
+		for i = 0, 2 do
+			part({
+				Name = "Plate",
+				Size = Vector3.new(side, 0.3, side * math.sqrt(3)),
+				CFrame = center * CFrame.Angles(0, math.rad(30 + i * 60), 0),
+				Material = Enum.Material.DiamondPlate,
+				Color = Color3.fromRGB(70, 75, 85),
+				CanCollide = false,
+			}, hex)
+		end
+		local label = Instance.new("BillboardGui")
+		label.Name = "Label"
+		label.Size = UDim2.fromOffset(40, 20)
+		label.StudsOffset = Vector3.new(0, 0.6, 0)
+		label.AlwaysOnTop = false
+		label.MaxDistance = 60
+		local text = Instance.new("TextLabel")
+		text.Size = UDim2.fromScale(1, 1)
+		text.BackgroundTransparency = 1
+		text.Text = cell
+		text.TextColor3 = Color3.fromRGB(200, 200, 210)
+		text.TextTransparency = 0.3
+		text.Font = Enum.Font.GothamBold
+		text.TextScaled = true
+		text.Parent = label
+		label.Parent = hex:FindFirstChild("Plate")
+		hex.Parent = gridFolder
 	end
 
 	model.Parent = parent
@@ -190,11 +217,12 @@ local function loadBase(index: number, container: Instance): Base
 	end
 	assert(model, "base")
 
-	local padsFolder = model:FindFirstChild("Pads") :: Folder
-	local pads: { [string]: BasePart } = {}
-	for i = 1, Economy.MaxPads do
-		pads[tostring(i)] = padsFolder:FindFirstChild(tostring(i)) :: BasePart
+	local gridFolder = model:FindFirstChild("Grid") :: Folder
+	local cells: { [string]: Model } = {}
+	for _, cell in Grid.AllCells() do
+		cells[cell] = gridFolder:FindFirstChild(cell) :: Model
 	end
+	local originPart = model:FindFirstChild("GridOrigin") :: BasePart
 
 	local zombies = Instance.new("Folder")
 	zombies.Name = "Zombies"
@@ -212,8 +240,12 @@ local function loadBase(index: number, container: Instance): Base
 		Frame = CFrame.lookAt(core, core + towardCenter),
 		Model = model,
 		Spawn = spawnPart.Position,
-		Core = Vector3.new(corePart.Position.X, spawnPart.Position.Y, corePart.Position.Z),
-		Pads = pads,
+		SpawnHalfWidth = spawnPart.Size.X / 2 - 2,
+		Core = core,
+		GridOrigin = originPart.CFrame,
+		Cells = cells,
+		-- Limites do chão no espaço do núcleo (Z+ = em direção ao ponto A)
+		Bounds = { MinX = -27, MaxX = 27, MinZ = -18, MaxZ = 128 },
 		Zombies = zombies,
 		Robots = robots,
 	}

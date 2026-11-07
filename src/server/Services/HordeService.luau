@@ -50,10 +50,30 @@ local ZOMBIE_LOOK = {
 	Tank = { Size = Vector3.new(3.4, 6.4, 2.6), Color = Color3.fromRGB(70, 90, 60) },
 	Boss = { Size = Vector3.new(6, 10, 4.5), Color = Color3.fromRGB(120, 30, 40) },
 }
-local ROBOT_AGGRO_RANGE = 14 -- zumbis desviam para atacar robôs próximos
-local ROBOT_ATTACK_RANGE = 4
+local ROBOT_AGGRO_RANGE = 10 -- zumbis desviam para atacar robôs próximos
+local ROBOT_ATTACK_RANGE = 3.5
+local ZOMBIE_SEPARATION = 2.6
+local CORE_REACH = 5 -- distância do núcleo que conta como invasão
+local WEAVE_STRENGTH = 0.55 -- quanto o zumbi zigue-zagueia (0 = linha reta)
 
 local HordeService = {}
+
+local function flat(v: Vector3): Vector3
+	return Vector3.new(v.X, 0, v.Z)
+end
+
+-- Mantém dentro do chão da base (espaço local do núcleo).
+local function clampToBase(base: BaseService.Base, position: Vector3): Vector3
+	local localPos = base.Frame:PointToObjectSpace(position)
+	local b = base.Bounds
+	return base.Frame:PointToWorldSpace(
+		Vector3.new(
+			math.clamp(localPos.X, b.MinX, b.MaxX),
+			localPos.Y,
+			math.clamp(localPos.Z, b.MinZ, b.MaxZ)
+		)
+	)
+end
 
 local runs: { [Player]: Run } = {}
 local paused = false
@@ -110,8 +130,12 @@ end
 local function spawnZombie(run: Run, spec: HordeConfig.ZombieSpec)
 	local look = ZOMBIE_LOOK[spec.Kind]
 	nextZombieId += 1
-	local jitter = Vector3.new(math.random(-3, 3), 0, math.random(-3, 3))
-	local position = run.Base.Spawn + jitter
+	-- Ponto A: qualquer lugar ao longo da entrada larga na frente da base.
+	local base = run.Base
+	local lateral = (math.random() * 2 - 1) * base.SpawnHalfWidth
+	local position = base.Spawn
+		+ base.Frame.RightVector * lateral
+		+ base.Frame.LookVector * (math.random() * 4 - 2)
 	local half = look.Size.Y / 2
 	local p = Models.Zombie(
 		spec.Kind,
@@ -130,6 +154,8 @@ local function spawnZombie(run: Run, spec: HordeConfig.ZombieSpec)
 		ContactDps = spec.ContactDps,
 		Position = position,
 		StunnedUntil = 0,
+		Seed = math.random() * 100,
+		Facing = (base.Core - position).Unit,
 		Part = p,
 		Dead = false,
 	})
@@ -183,7 +209,7 @@ local function startWave(run: Run, wave: number)
 	run.SpawnTimer = 0
 	run.State = "Active"
 	DataService.Set(run.Player, { "Horde", "Current" }, wave)
-	RobotService.RestoreAll(run.Player)
+	RobotService.ResetForWave(run.Player)
 
 	ui(run, "Wave", wave)
 	ui(run, "State", "Active")
@@ -222,6 +248,7 @@ local function defeat(run: Run)
 	local player = run.Player
 	clearZombies(run)
 	local lost = DataService.LosePercent(player, Economy.DefeatCashLossPercent)
+	RobotService.HealAll(player) -- recomeço do checkpoint: robôs inteiros
 	DataService.Increment(player, { "Stats", "Defeats" }, 1)
 	local data = DataService.Get(player)
 	local checkpoint = if data then data.Horde.HighestCheckpoint else 1
@@ -239,6 +266,7 @@ end
 
 local function stepRun(run: Run, dt: number, now: number)
 	if run.State ~= "Active" then
+		RobotService.Idle(run.Player, now, dt) -- voltam caminhando para o hexágono
 		run.Timer -= dt
 		local shown = math.max(0, math.ceil(run.Timer))
 		if shown ~= run.LastUiTimer then
@@ -261,7 +289,7 @@ local function stepRun(run: Run, dt: number, now: number)
 
 	-- Robôs atacam
 	local killedAny = false
-	RobotService.Step(run.Player, run.Zombies, now, function(z: Zombie, amount: number, stun: number?)
+	RobotService.Step(run.Player, run.Zombies, now, dt, function(z: Zombie, amount: number, stun: number?)
 		if damageZombie(run, z, amount, stun, now) then
 			killedAny = true
 		end
@@ -272,6 +300,7 @@ local function stepRun(run: Run, dt: number, now: number)
 
 	-- Movimento, ataque a robôs, dano por contato no avatar e invasões
 	local robots = RobotService.GetRobots(run.Player)
+	local base = run.Base
 	local character = run.Player.Character
 	local root = if character then character:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
 	local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
@@ -283,47 +312,65 @@ local function stepRun(run: Run, dt: number, now: number)
 		local z = run.Zombies[i]
 		local invaded = false
 		if now >= z.StunnedUntil then
-			-- alvo: robô vivo próximo, senão o núcleo
-			local goal = run.Base.Core
+			-- 1) Robô vivo por perto? Desvia para atacá-lo.
 			local attacking: RobotService.Robot? = nil
+			local chase: Vector3? = nil
+			local nearest = ROBOT_AGGRO_RANGE
 			for _, robot in robots do
 				if not robot.Broken then
-					local d = (Vector3.new(robot.Position.X, z.Position.Y, robot.Position.Z) - z.Position).Magnitude
-					if d <= ROBOT_AGGRO_RANGE then
-						goal = Vector3.new(robot.Position.X, z.Position.Y, robot.Position.Z)
-						if d <= ROBOT_ATTACK_RANGE then
-							attacking = robot
-						end
-						break
+					local d = flat(robot.Position - z.Position).Magnitude
+					if d <= nearest then
+						nearest = d
+						chase = robot.Position
+						attacking = if d <= ROBOT_ATTACK_RANGE then robot else nil
 					end
 				end
 			end
 
 			if attacking then
 				RobotService.Damage(run.Player, attacking, z.ContactDps * dt)
+				z.Facing = flat(attacking.Position - z.Position).Unit
 			else
-				local offset = goal - z.Position
-				local distance = offset.Magnitude
-				local stepLen = z.Speed * dt
-				if distance <= stepLen then
-					z.Position = goal
-					if goal == run.Base.Core then
-						invaded = true
-					end
-				else
-					z.Position += offset.Unit * stepLen
+				-- 2) Vai até o robô ou até o núcleo, zigue-zagueando (sem trilha fixa).
+				local goal = chase or base.Core
+				local toGoal = flat(goal - z.Position)
+				local desired = if toGoal.Magnitude > 0.01 then toGoal.Unit else z.Facing
+				if not chase then
+					local side = Vector3.new(-desired.Z, 0, desired.X)
+					desired += side * math.sin(now * 0.9 + z.Seed) * WEAVE_STRENGTH
 				end
-				local half = ZOMBIE_LOOK[z.Kind].Size.Y / 2
-				table.insert(parts, z.Part)
-				-- Andar cambaleante: balanço lateral e leve sobe-e-desce (animação procedural barata).
-				local phase = now * (4 + z.Speed * 0.3) + z.Id
-				local bob = math.abs(math.sin(phase)) * 0.25
-				table.insert(
-					frames,
-					CFrame.lookAt(z.Position + Vector3.new(0, half + bob, 0), goal + Vector3.new(0, half, 0))
-						* CFrame.Angles(0, 0, math.sin(phase) * 0.12)
-				)
+				-- 3) Separação: não andar em fila nem empilhar.
+				for _, other in run.Zombies do
+					if other ~= z and not other.Dead then
+						local away = flat(z.Position - other.Position)
+						local d = away.Magnitude
+						if d > 0.01 and d < ZOMBIE_SEPARATION then
+							desired += away.Unit * (ZOMBIE_SEPARATION - d) * 0.8
+						end
+					end
+				end
+				desired = if desired.Magnitude > 0.01 then desired.Unit else z.Facing
+				z.Facing = z.Facing:Lerp(desired, math.min(1, dt * 6))
+				if z.Facing.Magnitude > 0.01 then
+					z.Facing = z.Facing.Unit
+				end
+				z.Position = clampToBase(base, z.Position + desired * z.Speed * dt)
+
+				if flat(base.Core - z.Position).Magnitude <= CORE_REACH then
+					invaded = true
+				end
 			end
+
+			local half = ZOMBIE_LOOK[z.Kind].Size.Y / 2
+			-- Andar cambaleante: balanço lateral e leve sobe-e-desce (animação procedural barata).
+			local phase = now * (4 + z.Speed * 0.3) + z.Id
+			local bob = if attacking then 0 else math.abs(math.sin(phase)) * 0.25
+			local center = z.Position + Vector3.new(0, half + bob, 0)
+			table.insert(parts, z.Part)
+			table.insert(
+				frames,
+				CFrame.lookAt(center, center + z.Facing) * CFrame.Angles(0, 0, math.sin(phase) * 0.12)
+			)
 		end
 
 		if root and humanoid and humanoid.Health > 0 then
@@ -379,7 +426,7 @@ local function begin(player: Player)
 			Boss = false,
 			LastLoss = 0,
 			Paused = paused,
-			Pads = {},
+			Robots = {}, -- hexágono → { Hp, MaxHp }
 		},
 	})
 	if Replica.ReadyPlayers[player] then
@@ -485,18 +532,24 @@ function HordeService.IsPaused(): boolean
 end
 
 function HordeService.Start()
-	RobotService.SetHpListener(function(player, pad, hp, maxHp)
+	RobotService.SetHpListener(function(player, cell, hp, maxHp)
 		local run = runs[player]
 		if not run or not run.Replica:IsActive() then
 			return
 		end
 		-- Só replica quando o valor inteiro muda (evita enviar a cada frame).
 		local shownHp, shownMax = math.ceil(hp), math.ceil(maxHp)
-		local current = run.Replica.Data.Pads[pad]
+		local current = run.Replica.Data.Robots[cell]
 		if current and current.Hp == shownHp and current.MaxHp == shownMax then
 			return
 		end
-		run.Replica:Set({ "Pads", pad }, { Hp = shownHp, MaxHp = shownMax })
+		if shownMax <= 0 then
+			if current then
+				run.Replica:Set({ "Robots", cell }, nil)
+			end
+			return
+		end
+		run.Replica:Set({ "Robots", cell }, { Hp = shownHp, MaxHp = shownMax })
 	end)
 	RemoteGuard.Handle("StartFromCheckpoint", 3, 0.5, handleStartFromCheckpoint)
 

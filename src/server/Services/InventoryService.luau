@@ -8,6 +8,7 @@ local Shared = ReplicatedStorage.Shared
 local Rarity = require(Shared.Config.Rarity)
 local Items = require(Shared.Config.Items)
 local Economy = require(Shared.Config.Economy)
+local Grid = require(Shared.Config.Grid)
 
 local DataService = require(script.Parent.DataService)
 local RemoteGuard = require(script.Parent.RemoteGuard)
@@ -27,12 +28,9 @@ local InventoryService = {}
 -- Helpers
 --------------------------------------------------------------------------------
 
-function InventoryService.UnlockedPads(player: Player): number
+function InventoryService.Columns(player: Player): number
 	local data = DataService.Get(player)
-	if not data then
-		return 0
-	end
-	return math.min(Economy.StartPads + (data.Upgrades.Pads or 0), Economy.MaxPads)
+	return Grid.Columns(if data then data.Upgrades.Grid else 0)
 end
 
 function InventoryService.MaxRolls(player: Player): number
@@ -53,12 +51,21 @@ function InventoryService.SetGlobalLuckMultiplier(multiplier: number)
 	globalLuckMultiplier = math.max(1, multiplier)
 end
 
-local function isValidPad(player: Player, pad: any): boolean
-	if type(pad) ~= "string" then
-		return false
+local function isValidCell(player: Player, cell: any): boolean
+	return Grid.IsUnlocked(cell, InventoryService.Columns(player))
+end
+
+local function emptyLoadout(): { [string]: string }
+	return { Head = "", Torso = "", Arms = "", Legs = "", Weapon = "", Targeting = "Nearest" }
+end
+
+local function isEmpty(loadout: { [string]: string }): boolean
+	for _, slot in EQUIP_SLOTS do
+		if loadout[slot] ~= "" then
+			return false
+		end
 	end
-	local index = tonumber(pad)
-	return index ~= nil and RemoteGuard.IsInt(index, 1, InventoryService.UnlockedPads(player))
+	return true
 end
 
 -- Funde tudo o que for possível, em cascata (Comum → Incomum → ...). Retorna quantas fusões fez.
@@ -178,22 +185,38 @@ end
 -- Equipar
 --------------------------------------------------------------------------------
 
-local function handleEquip(player: Player, pad: any, slot: any, key: any): RemoteGuard.Result
-	if not isValidPad(player, pad) or not RemoteGuard.IsOneOf(slot, EQUIP_SLOTS) then
-		return RemoteGuard.Fail("Pad ou slot inválido")
+local function handleEquip(player: Player, cell: any, slot: any, key: any): RemoteGuard.Result
+	if not isValidCell(player, cell) or not RemoteGuard.IsOneOf(slot, EQUIP_SLOTS) then
+		return RemoteGuard.Fail("Hexágono ou slot inválido")
 	end
 	local data = DataService.Get(player) :: any
+	local current = data.Grid[cell]
 	if key ~= "" then
 		local item = Items.Parse(key)
 		if not item or item.Slot ~= slot then
 			return RemoteGuard.Fail("Item não serve neste slot")
 		end
-		if data.Pads[pad][slot] ~= key and DataService.AvailableCount(player, key) < 1 then
+		if (not current or current[slot] ~= key) and DataService.AvailableCount(player, key) < 1 then
 			return RemoteGuard.Fail("Você não tem cópia livre deste item")
 		end
+	elseif not current then
+		return { Ok = true }
 	end
-	DataService.Set(player, { "Pads", pad, slot }, key)
-	RobotService.RefreshPad(player, pad)
+	-- Hexágono vazio ganha um robô novo; robô sem nenhuma peça é removido.
+	local loadout = if current then table.clone(current) else emptyLoadout()
+	loadout[slot] = key
+	DataService.Set(player, { "Grid", cell }, if isEmpty(loadout) then nil else loadout)
+	RobotService.RefreshCell(player, cell)
+	return { Ok = true }
+end
+
+local function handleMoveRobot(player: Player, from: any, to: any): RemoteGuard.Result
+	if not isValidCell(player, from) or not isValidCell(player, to) or from == to then
+		return RemoteGuard.Fail("Hexágono inválido")
+	end
+	if not RobotService.MoveRobot(player, from, to) then
+		return RemoteGuard.Fail("Não há robô nesse hexágono")
+	end
 	return { Ok = true }
 end
 
@@ -223,15 +246,60 @@ local function handleEquipBest(player: Player): RemoteGuard.Result
 	DataService.Set(player, { "AvatarWeapon" }, takeBest("Weapon"))
 	AvatarService.Refresh(player)
 
-	local unlocked = InventoryService.UnlockedPads(player)
-	for i = 1, Economy.MaxPads do
-		local pad = tostring(i)
-		for _, slot in EQUIP_SLOTS do
-			local key = if i <= unlocked then takeBest(slot) else ""
-			DataService.Set(player, { "Pads", pad, slot }, key)
+	-- Robôs: uma arma por hexágono. Corpo a corpo na frente (A, B), rifles atrás (C, D).
+	local weapons: { string } = {}
+	for key, count in stock do
+		local item = Items.Parse(key)
+		if item and item.Kind == "Weapon" then
+			for _ = 1, count do
+				table.insert(weapons, key)
+			end
 		end
-		RobotService.RefreshPad(player, pad)
 	end
+	table.sort(weapons, function(a, b)
+		return (Items.Parse(a) :: Items.ParsedItem).Tier > (Items.Parse(b) :: Items.ParsedItem).Tier
+	end)
+	local cells = Grid.UnlockedCells(InventoryService.Columns(player))
+	local front, back = {}, {}
+	for _, cell in cells do
+		table.insert(if Grid.IsFrontRow(cell) then front else back, cell)
+	end
+	local newGrid: { [string]: any } = {}
+	local placed: { string } = {}
+	local function place(cell: string, weaponKey: string)
+		stock[weaponKey] -= 1
+		local old = (data.Grid :: any)[cell]
+		local loadout = emptyLoadout()
+		loadout.Weapon = weaponKey
+		loadout.Targeting = if old then old.Targeting else "Nearest"
+		newGrid[cell] = loadout
+		table.insert(placed, cell)
+	end
+	local leftover: { string } = {}
+	for _, key in weapons do
+		local isRifle = (Items.Parse(key) :: Items.ParsedItem).Type == "Rifle"
+		local preferred = if isRifle then back else front
+		if #preferred > 0 then
+			place(table.remove(preferred, 1) :: string, key)
+		else
+			table.insert(leftover, key)
+		end
+	end
+	for _, key in leftover do
+		local cell = table.remove(front, 1) or table.remove(back, 1)
+		if not cell then
+			break
+		end
+		place(cell, key)
+	end
+	-- Peças: os robôs com armas melhores recebem as peças melhores primeiro.
+	for _, cell in placed do
+		for _, slot in Items.PartSlots do
+			newGrid[cell][slot] = takeBest(slot)
+		end
+	end
+	DataService.Set(player, { "Grid" }, newGrid)
+	RobotService.RefreshAll(player)
 
 	for _, lineId in Economy.FactoryLineIds() do
 		local unlockedLine = data.Factory.Lines[lineId].Unlocked
@@ -247,11 +315,16 @@ local function handleEquipBest(player: Player): RemoteGuard.Result
 	return { Ok = true }
 end
 
-local function handleTargeting(player: Player, pad: any, mode: any): RemoteGuard.Result
-	if not isValidPad(player, pad) or not RemoteGuard.IsOneOf(mode, TARGETING_MODES) then
+local function handleTargeting(player: Player, cell: any, mode: any): RemoteGuard.Result
+	local data = DataService.Get(player) :: any
+	if
+		not isValidCell(player, cell)
+		or not data.Grid[cell]
+		or not RemoteGuard.IsOneOf(mode, TARGETING_MODES)
+	then
 		return RemoteGuard.Fail("Configuração inválida")
 	end
-	DataService.Set(player, { "Pads", pad, "Targeting" }, mode)
+	DataService.Set(player, { "Grid", cell, "Targeting" }, mode)
 	return { Ok = true }
 end
 
@@ -273,7 +346,7 @@ local function handleBuyUpgrade(player: Player, name: any): RemoteGuard.Result
 		return RemoteGuard.Fail("Dinheiro insuficiente")
 	end
 	DataService.Set(player, { "Upgrades", name }, level + 1)
-	if name == "Pads" then
+	if name == "Grid" then
 		RobotService.RefreshAll(player)
 	end
 	return { Ok = true, Level = level + 1 }
@@ -284,6 +357,7 @@ function InventoryService.Start()
 	RemoteGuard.Handle("Fuse", 10, 5, handleFuse)
 	RemoteGuard.Handle("Sell", 10, 5, handleSell)
 	RemoteGuard.Handle("Equip", 15, 8, handleEquip)
+	RemoteGuard.Handle("MoveRobot", 10, 5, handleMoveRobot)
 	RemoteGuard.Handle("EquipBest", 2, 0.5, handleEquipBest)
 	RemoteGuard.Handle("SetTargeting", 10, 5, handleTargeting)
 	RemoteGuard.Handle("SetAutoSettings", 3, 1, handleAutoSettings)

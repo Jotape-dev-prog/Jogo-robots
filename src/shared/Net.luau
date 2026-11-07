@@ -11,9 +11,10 @@ Net.Functions = {
 	"Roll", -- (count: number) -> resultados da roleta
 	"Fuse", -- (key: string) -> forja 3 → 1
 	"Sell", -- (key: string, amount: number)
-	"Equip", -- (pad: string, slot: string, key: string | "")
+	"Equip", -- (cell: string, slot: string, key: string | "") hexágono "A1".."D7"
+	"MoveRobot", -- (from: string, to: string) move ou troca robôs de hexágono
 	"EquipBest", -- () preenche os pads com as melhores peças
-	"SetTargeting", -- (pad: string, mode: string)
+	"SetTargeting", -- (cell: string, mode: string)
 	"SetAutoSettings", -- (autoFuse: boolean, autoSellBelowTier: number)
 	"BuyUpgrade", -- (name: string)
 	"StartFromCheckpoint", -- (wave: number)
