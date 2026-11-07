@@ -41,7 +41,7 @@ function Horde.Build(wave: number): { ZombieSpec }
 	local list = {}
 	local count = 6 + math.floor(wave * 1.5)
 	local hp = scale(20, wave, 1.13)
-	local reward = math.floor(scale(4, wave, 1.09))
+	local reward = math.floor(scale(7, wave, 1.085))
 	local speed = math.min(7 + wave * 0.08, 14)
 
 	for i = 1, count do

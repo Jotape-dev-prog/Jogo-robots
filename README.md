@@ -10,8 +10,8 @@ Tower defense + tycoon + gacha. GDD e backlog completos no Notion ("GDD — Rob�
 4. Dê Play. Cada jogador recebe uma base provisória e as hordas começam sozinhas.
 
 Configure o jogo para **5 jogadores por servidor** (Game Settings → Places → Max Players).
-Para salvar dados de verdade no Studio, ative **Enable Studio Access to API Services** e mude
-`USE_MOCK_IN_STUDIO` para `false` em `DataService`.
+No Studio, os dados vão para o DataStore `PlayerData_v1_Studio` (separado do jogo publicado).
+Sem **Game Settings → Security → Enable Studio Access to API Services**, o ProfileStore usa um DataStore simulado.
 
 ## Estrutura
 

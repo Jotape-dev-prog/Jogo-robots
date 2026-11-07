@@ -29,6 +29,15 @@ local windows = {
 	Upgrades = Upgrades.Create(),
 }
 Hud.Build(windows)
+
+-- Painéis da base (máquina da roleta, bancada da forja) abrem a janela correspondente.
+game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt)
+	local target = prompt:GetAttribute("OpensWindow")
+	local window = if type(target) == "string" then (windows :: any)[target] else nil
+	if window then
+		window.Open()
+	end
+end)
 Defeat.Create()
 CombatController.Start()
 

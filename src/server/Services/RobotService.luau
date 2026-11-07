@@ -11,6 +11,7 @@ local Economy = require(Shared.Config.Economy)
 
 local Types = require(script.Parent.Parent.Types)
 local Combat = require(script.Parent.Parent.Combat)
+local Models = require(script.Parent.Parent.Models)
 local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
 
@@ -35,54 +36,6 @@ local RobotService = {}
 
 local robots: { [Player]: { [string]: Robot } } = {}
 local hpListener: HpListener? = nil
-
-local function tierColor(key: string): Color3
-	local item = Items.Parse(key)
-	return if item then Rarity.Get(item.Tier).Color else Color3.fromRGB(60, 60, 60)
-end
-
-local function block(name: string, size: Vector3, cframe: CFrame, color: Color3, parent: Instance): Part
-	local p = Instance.new("Part")
-	p.Name = name
-	p.Anchored = true
-	p.CanCollide = false
-	p.CanQuery = false
-	p.CanTouch = false
-	p.Size = size
-	p.CFrame = cframe
-	p.Color = color
-	p.Material = Enum.Material.Metal
-	p.Parent = parent
-	return p
-end
-
--- Modelo provisório: blocos coloridos pela raridade de cada peça. Trocar pelos modelos 3D depois.
-local function buildModel(pad: { [string]: string }, base: CFrame): Model
-	local model = Instance.new("Model")
-	model.Name = "Robot"
-	local up = base * CFrame.new(0, 0.3, 0)
-	if pad.Legs ~= "" then
-		block("Legs", Vector3.new(2.6, 2.4, 1.4), up * CFrame.new(0, 1.2, 0), tierColor(pad.Legs), model)
-	end
-	if pad.Torso ~= "" then
-		block("Torso", Vector3.new(3, 2.6, 1.8), up * CFrame.new(0, 3.7, 0), tierColor(pad.Torso), model)
-	end
-	if pad.Arms ~= "" then
-		block("ArmL", Vector3.new(0.9, 2.4, 0.9), up * CFrame.new(-2, 3.6, 0), tierColor(pad.Arms), model)
-		block("ArmR", Vector3.new(0.9, 2.4, 0.9), up * CFrame.new(2, 3.6, 0), tierColor(pad.Arms), model)
-	end
-	if pad.Head ~= "" then
-		block("Head", Vector3.new(1.6, 1.4, 1.6), up * CFrame.new(0, 5.8, 0), tierColor(pad.Head), model)
-	end
-	if pad.Weapon ~= "" then
-		block("Weapon", Vector3.new(0.4, 0.4, 3.2), up * CFrame.new(2, 3, -1.6), tierColor(pad.Weapon), model)
-	end
-	local primary = model:FindFirstChildWhichIsA("BasePart")
-	if primary then
-		model.PrimaryPart = primary
-	end
-	return model
-end
 
 local function computeStats(pad: { [string]: string }): (number, Items.WeaponStats?, number)
 	local hp = 0
@@ -141,7 +94,7 @@ function RobotService.RefreshPad(player: Player, padId: string)
 
 	local top = padPart.Position + Vector3.new(0, padPart.Size.X / 2, 0)
 	local facing = CFrame.lookAt(top, Vector3.new(base.Spawn.X, top.Y, base.Spawn.Z))
-	local model = buildModel(padData, facing)
+	local model = Models.Robot(padData, facing)
 	model.Parent = base.Robots
 
 	perPlayer[padId] = {
@@ -176,7 +129,7 @@ function RobotService.RestoreAll(player: Player)
 		robot.Hp = robot.MaxHp
 		robot.Broken = false
 		if robot.Model then
-			for _, p in robot.Model:GetChildren() do
+			for _, p in robot.Model:GetDescendants() do
 				if p:IsA("BasePart") then
 					p.Transparency = 0
 				end
@@ -200,7 +153,7 @@ function RobotService.Damage(player: Player, robot: Robot, amount: number)
 	if robot.Hp <= 0 then
 		robot.Broken = true
 		if robot.Model then
-			for _, p in robot.Model:GetChildren() do
+			for _, p in robot.Model:GetDescendants() do
 				if p:IsA("BasePart") then
 					p.Transparency = 0.75
 				end

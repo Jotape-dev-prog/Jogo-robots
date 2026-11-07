@@ -14,11 +14,10 @@ local Template = require(script.Parent.Parent.Data.Template)
 type PlayerData = Template.PlayerData
 
 local STORE_NAME = "PlayerData_v1"
--- No Studio, usa o DataStore simulado para não sujar os dados reais durante testes.
-local USE_MOCK_IN_STUDIO = true
-
-local baseStore = ProfileStore.New(STORE_NAME, Template)
-local store = if RunService:IsStudio() and USE_MOCK_IN_STUDIO then baseStore.Mock else baseStore
+-- No Studio os testes gravam num DataStore separado, para nunca tocar nos dados reais dos jogadores.
+-- Sem "Enable Studio Access to API Services", o ProfileStore usa um DataStore simulado sozinho.
+local storeName = if RunService:IsStudio() then STORE_NAME .. "_Studio" else STORE_NAME
+local store = ProfileStore.New(storeName, Template)
 
 local PlayerDataToken = Replica.Token("PlayerData")
 

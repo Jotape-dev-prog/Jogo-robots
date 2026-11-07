@@ -9,6 +9,7 @@ local Items = require(Shared.Config.Items)
 local Rarity = require(Shared.Config.Rarity)
 
 local DataService = require(script.Parent.DataService)
+local Models = require(script.Parent.Parent.Models)
 local RemoteGuard = require(script.Parent.RemoteGuard)
 local HordeService = require(script.Parent.HordeService)
 
@@ -55,24 +56,22 @@ function AvatarService.Refresh(player: Player)
 	if not weapon or not hand or not data then
 		return
 	end
-	local visual = Instance.new("Part")
+	local grip = hand.CFrame * CFrame.new(0, -hand.Size.Y / 2, 0)
+	local visual = Models.Weapon(character, data.AvatarWeapon, grip, 0.8)
+	if not visual then
+		return
+	end
 	visual.Name = "AvatarWeapon"
-	visual.Massless = true
-	visual.CanCollide = false
-	visual.CanQuery = false
-	visual.CanTouch = false
-	visual.Material = Enum.Material.Metal
-	visual.Color = Rarity.Get(tier).Color
-	visual.Size = if weapon.Pattern == "Line"
-		then Vector3.new(0.35, 0.5, 3)
-		elseif weapon.Pattern == "Circle" then Vector3.new(1.1, 1.1, 2.4)
-		else Vector3.new(0.25, 0.4, 3.6)
-	visual.CFrame = hand.CFrame * CFrame.new(0, -hand.Size.Y / 2, -visual.Size.Z / 2)
-	local weld = Instance.new("WeldConstraint")
-	weld.Part0 = hand
-	weld.Part1 = visual
-	weld.Parent = visual
-	visual.Parent = character
+	for _, p in visual:GetDescendants() do
+		if p:IsA("BasePart") then
+			p.Anchored = false
+			p.Massless = true
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = hand
+			weld.Part1 = p
+			weld.Parent = p
+		end
+	end
 end
 
 local function handleAttack(player: Player, aim: any): RemoteGuard.Result

@@ -81,6 +81,81 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		Material = Enum.Material.Metal,
 		Color = Color3.fromRGB(70, 140, 220),
 	}, model)
+	-- Detalhes do núcleo (gerador): anel brilhante e chaminés
+	part({
+		Name = "CoreRing",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(1, 9, 9),
+		CFrame = frame * CFrame.new(0, 9.5, -60) * CFrame.Angles(0, 0, math.rad(90)),
+		Material = Enum.Material.Neon,
+		Color = Color3.fromRGB(90, 200, 255),
+		CanCollide = false,
+	}, model)
+	for _, x in { -4, 4 } do
+		part({
+			Name = "Chimney",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(6, 1.4, 1.4),
+			CFrame = frame * CFrame.new(x, 12, -61.5) * CFrame.Angles(0, 0, math.rad(90)),
+			Material = Enum.Material.CorrodedMetal,
+			Color = Color3.fromRGB(110, 75, 50),
+		}, model)
+	end
+
+	-- Cercas de madeira e metal nas laterais (Cyber-Rustic)
+	for _, x in { -29.5, 29.5 } do
+		for z = -75, 65, 14 do
+			part({
+				Name = "Fence",
+				Size = Vector3.new(0.6, 3, 12),
+				CFrame = frame * CFrame.new(x, 2.5, z),
+				Material = Enum.Material.WoodPlanks,
+				Color = Color3.fromRGB(105, 75, 50),
+			}, model)
+			part({
+				Name = "FencePost",
+				Size = Vector3.new(1, 4, 1),
+				CFrame = frame * CFrame.new(x, 3, z + 6.5),
+				Material = Enum.Material.CorrodedMetal,
+				Color = Color3.fromRGB(90, 85, 80),
+			}, model)
+		end
+	end
+
+	-- Máquina da roleta e bancada da forja: o painel abre a tela correspondente no cliente.
+	local function station(name: string, offset: Vector3, color: Color3, label: string, window: string)
+		local body = part({
+			Name = name,
+			Size = Vector3.new(5, 6, 3),
+			CFrame = frame * CFrame.new(offset + Vector3.new(0, 3.5, 0)) * CFrame.Angles(0, math.rad(180), 0),
+			Material = Enum.Material.Metal,
+			Color = Color3.fromRGB(70, 65, 60),
+		}, model)
+		part({
+			Name = name .. "Screen",
+			Size = Vector3.new(3.6, 2.4, 0.2),
+			CFrame = body.CFrame * CFrame.new(0, 1.2, -1.55),
+			Material = Enum.Material.Neon,
+			Color = color,
+			CanCollide = false,
+		}, model)
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ObjectText = label
+		prompt.ActionText = "Abrir"
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 10
+		prompt.RequiresLineOfSight = false
+		prompt:SetAttribute("OpensWindow", window)
+		prompt.Parent = body
+	end
+	station("RollMachine", Vector3.new(-18, 1, -45), Color3.fromRGB(255, 170, 40), "Roleta", "Roll")
+	station(
+		"ForgeBench",
+		Vector3.new(18, 1, -45),
+		Color3.fromRGB(170, 90, 255),
+		"Forja e Inventário",
+		"Inventory"
+	)
 
 	local pads = Instance.new("Folder")
 	pads.Name = "Pads"

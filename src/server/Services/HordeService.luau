@@ -7,6 +7,7 @@
 -- Um único Heartbeat move todos os zumbis de todas as bases (BulkMoveTo) — barato para 5 × 15.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Debris = game:GetService("Debris")
 local RunService = game:GetService("RunService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
@@ -18,6 +19,7 @@ local Replica = require(ServerScriptService.ReplicaServer)
 
 local Types = require(script.Parent.Parent.Types)
 local Combat = require(script.Parent.Parent.Combat)
+local Models = require(script.Parent.Parent.Models)
 local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
 local RobotService = require(script.Parent.RobotService)
@@ -80,10 +82,17 @@ end
 -- Zumbis
 --------------------------------------------------------------------------------
 
-local function removeZombie(run: Run, index: number)
+local function removeZombie(run: Run, index: number, killed: boolean?)
 	local z = run.Zombies[index]
 	z.Dead = true
-	z.Part:Destroy()
+	if killed then
+		-- Morte: tomba para trás e some (o corpo não bloqueia mais nada).
+		local part = z.Part
+		part.CFrame = part.CFrame * CFrame.new(0, -part.Size.Y * 0.6, 0) * CFrame.Angles(math.rad(-80), 0, 0)
+		Debris:AddItem(part, 0.6)
+	else
+		z.Part:Destroy()
+	end
 	-- remoção O(1): troca com o último
 	run.Zombies[index] = run.Zombies[#run.Zombies]
 	run.Zombies[#run.Zombies] = nil
@@ -101,19 +110,13 @@ end
 local function spawnZombie(run: Run, spec: HordeConfig.ZombieSpec)
 	local look = ZOMBIE_LOOK[spec.Kind]
 	nextZombieId += 1
-	local p = Instance.new("Part")
-	p.Name = spec.Kind
-	p.Anchored = true
-	p.CanCollide = false
-	p.CanTouch = false
-	p.Size = look.Size
-	p.Color = look.Color
-	p.Material = Enum.Material.SmoothPlastic
 	local jitter = Vector3.new(math.random(-3, 3), 0, math.random(-3, 3))
 	local position = run.Base.Spawn + jitter
-	p.CFrame = CFrame.lookAt(
-		position + Vector3.new(0, look.Size.Y / 2, 0),
-		run.Base.Core + Vector3.new(0, look.Size.Y / 2, 0)
+	local half = look.Size.Y / 2
+	local p = Models.Zombie(
+		spec.Kind,
+		look.Size,
+		CFrame.lookAt(position + Vector3.new(0, half, 0), run.Base.Core + Vector3.new(0, half, 0))
 	)
 	p.Parent = run.Base.Zombies
 
@@ -162,7 +165,7 @@ end
 local function sweepDead(run: Run)
 	for i = #run.Zombies, 1, -1 do
 		if run.Zombies[i].Dead then
-			removeZombie(run, i)
+			removeZombie(run, i, true)
 		end
 	end
 	syncCounts(run)
@@ -310,11 +313,15 @@ local function stepRun(run: Run, dt: number, now: number)
 				else
 					z.Position += offset.Unit * stepLen
 				end
-				local half = z.Part.Size.Y / 2
+				local half = ZOMBIE_LOOK[z.Kind].Size.Y / 2
 				table.insert(parts, z.Part)
+				-- Andar cambaleante: balanço lateral e leve sobe-e-desce (animação procedural barata).
+				local phase = now * (4 + z.Speed * 0.3) + z.Id
+				local bob = math.abs(math.sin(phase)) * 0.25
 				table.insert(
 					frames,
-					CFrame.lookAt(z.Position + Vector3.new(0, half, 0), goal + Vector3.new(0, half, 0))
+					CFrame.lookAt(z.Position + Vector3.new(0, half + bob, 0), goal + Vector3.new(0, half, 0))
+						* CFrame.Angles(0, 0, math.sin(phase) * 0.12)
 				)
 			end
 		end
