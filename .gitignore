@@ -1,0 +1,16 @@
+# Arquivos gerados pelo Rojo / Studio
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+*.lock
+sourcemap.json
+Packages/
+ServerPackages/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/*
+!.vscode/settings.json

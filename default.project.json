@@ -1,0 +1,45 @@
+{
+	"name": "RobosVsZumbis",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$ignoreUnknownInstances": true,
+			"Shared": {
+				"$path": "src/shared"
+			},
+			"ReplicaClient": {
+				"$path": "vendor/Replica/ReplicatedStorage/ReplicaClient.luau"
+			},
+			"ReplicaShared": {
+				"$path": "vendor/Replica/ReplicatedStorage/ReplicaShared"
+			}
+		},
+		"ServerScriptService": {
+			"$ignoreUnknownInstances": true,
+			"Server": {
+				"$path": "src/server"
+			},
+			"ReplicaServer": {
+				"$path": "vendor/Replica/ServerScriptService/ReplicaServer.luau"
+			},
+			"ProfileStore": {
+				"$path": "vendor/ProfileStore/ProfileStore.luau"
+			}
+		},
+		"StarterPlayer": {
+			"$ignoreUnknownInstances": true,
+			"StarterPlayerScripts": {
+				"$ignoreUnknownInstances": true,
+				"Client": {
+					"$path": "src/client"
+				}
+			}
+		},
+		"Workspace": {
+			"$ignoreUnknownInstances": true
+		},
+		"Lighting": {
+			"$ignoreUnknownInstances": true
+		}
+	}
+}
