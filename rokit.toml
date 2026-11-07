@@ -1,5 +1,5 @@
 # Ferramentas do projeto. Instale o Rokit (https://github.com/rojo-rbx/rokit) e rode `rokit install` nesta pasta.
 [tools]
-rojo = "rojo-rbx/rojo@7.4.4"
+rojo = "rojo-rbx/rojo@7.7.1"
 selene = "Kampfkarren/selene@0.27.1"
 stylua = "JohnnyMorganz/StyLua@0.20.0"
