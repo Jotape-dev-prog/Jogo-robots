@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local ReplicaClient = require(ReplicatedStorage.ReplicaClient)
 local Hud = require(script.Hud)
+local CombatController = require(script.CombatController)
 
 ReplicaClient.OnNew("PlayerData", function(replica)
 	Hud.BindPlayerData(replica)
@@ -15,4 +16,5 @@ ReplicaClient.OnNew("HordeState", function(replica)
 end)
 
 Hud.Build()
+CombatController.Start()
 ReplicaClient.RequestData() -- avisa o servidor que o cliente está pronto para receber replicas

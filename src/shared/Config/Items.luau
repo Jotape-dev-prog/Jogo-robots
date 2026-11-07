@@ -116,6 +116,12 @@ function Items.DisplayName(key: string): string
 	return `{(Items.PartNames :: any)[item.Type]} {tierName}`
 end
 
+-- HP máximo do avatar segundo o tier da arma equipada (sem arma = tier 1).
+Items.AvatarBaseHp = 100
+function Items.AvatarMaxHp(weaponTier: number?): number
+	return math.floor(Items.AvatarBaseHp * Rarity.Multiplier(weaponTier or 1) ^ 0.75)
+end
+
 -- Chave do tier seguinte (para a forja); nil se já for o último tier.
 function Items.NextTierKey(key: string): string?
 	local item = Items.Parse(key)

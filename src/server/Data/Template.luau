@@ -13,6 +13,14 @@ export type PadData = {
 	Targeting: string, -- "Nearest" | "Boss" | "Ranged"
 }
 
+export type WorkerData = {
+	Unlocked: boolean,
+	Head: string,
+	Torso: string,
+	Arms: string,
+	Legs: string,
+}
+
 export type PlayerData = {
 	DataVersion: number,
 	Cash: number,
@@ -25,6 +33,8 @@ export type PlayerData = {
 	},
 	Inventory: { [string]: number }, -- chave do item → quantidade
 	Pads: { [string]: PadData }, -- "1".."6"
+	AvatarWeapon: string, -- arma equipada no avatar ("" = nenhuma)
+	Factory: { Lines: { [string]: WorkerData } }, -- "1-1".."3-2"
 	Upgrades: { [string]: number },
 	Settings: {
 		AutoFuse: boolean,
@@ -55,6 +65,11 @@ pads["1"] = {
 	Targeting = "Nearest",
 }
 
+local lines: { [string]: WorkerData } = {}
+for _, id in Economy.FactoryLineIds() do
+	lines[id] = { Unlocked = false, Head = "", Torso = "", Arms = "", Legs = "" }
+end
+
 local Template: PlayerData = {
 	DataVersion = 1,
 	Cash = Economy.StartingCash,
@@ -66,9 +81,11 @@ local Template: PlayerData = {
 		["Part:Torso:1"] = 1,
 		["Part:Arms:1"] = 1,
 		["Part:Legs:1"] = 1,
-		["Weapon:Sword:1"] = 1,
+		["Weapon:Sword:1"] = 2, -- uma para o robô do pad 1, outra para o avatar
 	},
 	Pads = pads,
+	AvatarWeapon = "Weapon:Sword:1",
+	Factory = { Lines = lines },
 	Upgrades = { KillValue = 0, Rolls = 0, Luck = 0, Pads = 0 },
 	Settings = { AutoFuse = false, AutoSellBelowTier = 0 },
 	Stats = { Kills = 0, Rolls = 0, Defeats = 0 },

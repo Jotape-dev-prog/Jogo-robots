@@ -10,6 +10,7 @@ local Items = require(Shared.Config.Items)
 local Economy = require(Shared.Config.Economy)
 
 local Types = require(script.Parent.Parent.Types)
+local Combat = require(script.Parent.Parent.Combat)
 local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
 
@@ -259,60 +260,11 @@ function RobotService.Step(player: Player, zombies: { Zombie }, now: number, dea
 			local target = pickTarget(robot, mode, zombies, weapon.Range)
 			if target then
 				robot.NextAttack = now + weapon.Cooldown
-				local hits = 0
 				local toTarget =
 					Vector3.new(target.Position.X - robot.Position.X, 0, target.Position.Z - robot.Position.Z)
 				local dir = if toTarget.Magnitude > 0 then toTarget.Unit else Vector3.zAxis
-
-				if weapon.Pattern == "Circle" then
-					for _, z in zombies do
-						if hits >= weapon.MaxTargets then
-							break
-						end
-						if not z.Dead and flatDistance(robot.Position, z.Position) <= weapon.Range then
-							dealDamage(z, robot.Damage, weapon.Stun)
-							hits += 1
-						end
-					end
-				elseif weapon.Pattern == "Cone" then
-					local cosHalf = math.cos(math.rad((weapon.Angle or 90) / 2))
-					for _, z in zombies do
-						if hits >= weapon.MaxTargets then
-							break
-						end
-						local offset =
-							Vector3.new(z.Position.X - robot.Position.X, 0, z.Position.Z - robot.Position.Z)
-						local dist = offset.Magnitude
-						if
-							not z.Dead
-							and dist <= weapon.Range
-							and (dist < 1 or offset.Unit:Dot(dir) >= cosHalf)
-						then
-							dealDamage(z, robot.Damage)
-							hits += 1
-						end
-					end
-				else -- Line (pierce)
-					dealDamage(target, robot.Damage)
-					hits = 1
-					for _, z in zombies do
-						if hits >= weapon.MaxTargets then
-							break
-						end
-						if z ~= target and not z.Dead then
-							local offset = Vector3.new(
-								z.Position.X - robot.Position.X,
-								0,
-								z.Position.Z - robot.Position.Z
-							)
-							local along = offset:Dot(dir)
-							local side = (offset - dir * along).Magnitude
-							if along > 0 and along <= weapon.Range and side <= 3 then
-								dealDamage(z, robot.Damage)
-								hits += 1
-							end
-						end
-					end
+				for _, z in Combat.Resolve(weapon, robot.Position, dir, zombies, target) do
+					dealDamage(z, robot.Damage, weapon.Stun)
 				end
 
 				if robot.Model and robot.Model.PrimaryPart then

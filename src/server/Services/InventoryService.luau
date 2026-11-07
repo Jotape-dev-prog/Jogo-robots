@@ -12,6 +12,8 @@ local Economy = require(Shared.Config.Economy)
 local DataService = require(script.Parent.DataService)
 local RemoteGuard = require(script.Parent.RemoteGuard)
 local RobotService = require(script.Parent.RobotService)
+local AvatarService = require(script.Parent.AvatarService)
+local FactoryService = require(script.Parent.FactoryService)
 
 local rng = Random.new()
 local globalLuckMultiplier = 1 -- eventos globais (ex.: 5x sorte) alteram isto
@@ -217,6 +219,10 @@ local function handleEquipBest(player: Player): RemoteGuard.Result
 		return bestKey
 	end
 
+	-- 1º avatar (melhor arma), 2º pads de defesa, 3º trabalhadores da fábrica.
+	DataService.Set(player, { "AvatarWeapon" }, takeBest("Weapon"))
+	AvatarService.Refresh(player)
+
 	local unlocked = InventoryService.UnlockedPads(player)
 	for i = 1, Economy.MaxPads do
 		local pad = tostring(i)
@@ -226,6 +232,18 @@ local function handleEquipBest(player: Player): RemoteGuard.Result
 		end
 		RobotService.RefreshPad(player, pad)
 	end
+
+	for _, lineId in Economy.FactoryLineIds() do
+		local unlockedLine = data.Factory.Lines[lineId].Unlocked
+		for _, slot in Items.PartSlots do
+			DataService.Set(
+				player,
+				{ "Factory", "Lines", lineId, slot },
+				if unlockedLine then takeBest(slot) else ""
+			)
+		end
+	end
+	FactoryService.Refresh(player)
 	return { Ok = true }
 end
 

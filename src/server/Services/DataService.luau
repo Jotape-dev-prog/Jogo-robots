@@ -233,15 +233,22 @@ function DataService.ItemCount(player: Player, key: string): number
 	return if data then data.Inventory[key] or 0 else 0
 end
 
--- Quantas cópias do item estão equipadas em pads.
+-- Quantas cópias do item estão em uso (pads, avatar e trabalhadores da fábrica).
 function DataService.EquippedCount(player: Player, key: string): number
 	local data = DataService.Get(player)
 	if not data then
 		return 0
 	end
-	local count = 0
+	local count = if data.AvatarWeapon == key then 1 else 0
 	for _, pad in data.Pads do
 		for _, slotKey in pad :: any do
+			if slotKey == key then
+				count += 1
+			end
+		end
+	end
+	for _, worker in data.Factory.Lines do
+		for _, slotKey in worker :: any do
 			if slotKey == key then
 				count += 1
 			end

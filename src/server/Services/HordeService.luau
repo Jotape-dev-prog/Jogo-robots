@@ -13,9 +13,11 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Shared = ReplicatedStorage.Shared
 local HordeConfig = require(Shared.Config.Horde)
 local Economy = require(Shared.Config.Economy)
+local Items = require(Shared.Config.Items)
 local Replica = require(ServerScriptService.ReplicaServer)
 
 local Types = require(script.Parent.Parent.Types)
+local Combat = require(script.Parent.Parent.Combat)
 local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
 local RobotService = require(script.Parent.RobotService)
@@ -140,6 +142,32 @@ local function killReward(player: Player, zombie: Zombie)
 	DataService.Increment(player, { "Stats", "Kills" }, 1)
 end
 
+-- Aplica dano; retorna true se matou (a recompensa é paga aqui).
+local function damageZombie(run: Run, z: Zombie, amount: number, stun: number?, now: number): boolean
+	if z.Dead then
+		return false
+	end
+	z.Hp -= amount
+	if stun then
+		z.StunnedUntil = math.max(z.StunnedUntil, now + stun)
+	end
+	if z.Hp <= 0 then
+		z.Dead = true
+		killReward(run.Player, z)
+		return true
+	end
+	return false
+end
+
+local function sweepDead(run: Run)
+	for i = #run.Zombies, 1, -1 do
+		if run.Zombies[i].Dead then
+			removeZombie(run, i)
+		end
+	end
+	syncCounts(run)
+end
+
 --------------------------------------------------------------------------------
 -- Fluxo da horda
 --------------------------------------------------------------------------------
@@ -231,26 +259,12 @@ local function stepRun(run: Run, dt: number, now: number)
 	-- Robôs atacam
 	local killedAny = false
 	RobotService.Step(run.Player, run.Zombies, now, function(z: Zombie, amount: number, stun: number?)
-		if z.Dead then
-			return
-		end
-		z.Hp -= amount
-		if stun then
-			z.StunnedUntil = math.max(z.StunnedUntil, now + stun)
-		end
-		if z.Hp <= 0 then
-			z.Dead = true
+		if damageZombie(run, z, amount, stun, now) then
 			killedAny = true
-			killReward(run.Player, z)
 		end
 	end)
 	if killedAny then
-		for i = #run.Zombies, 1, -1 do
-			if run.Zombies[i].Dead then
-				removeZombie(run, i)
-			end
-		end
-		syncCounts(run)
+		sweepDead(run)
 	end
 
 	-- Movimento, ataque a robôs, dano por contato no avatar e invasões
@@ -424,6 +438,32 @@ end
 --------------------------------------------------------------------------------
 -- API
 --------------------------------------------------------------------------------
+
+-- Ataque do avatar contra a horda do próprio jogador. Retorna (acertos, abates).
+function HordeService.PlayerAttack(
+	player: Player,
+	weapon: Items.WeaponStats,
+	origin: Vector3,
+	dir: Vector3,
+	damage: number
+): (number, number)
+	local run = runs[player]
+	if not run or paused or run.State ~= "Active" then
+		return 0, 0
+	end
+	local now = os.clock()
+	local kills = 0
+	local hits = Combat.Resolve(weapon, origin, dir, run.Zombies, nil)
+	for _, z in hits do
+		if damageZombie(run, z, damage, weapon.Stun, now) then
+			kills += 1
+		end
+	end
+	if kills > 0 then
+		sweepDead(run)
+	end
+	return #hits, kills
+end
 
 -- Pausa/retoma todas as hordas (usado pelo ciclo de PvP).
 function HordeService.SetPaused(value: boolean)

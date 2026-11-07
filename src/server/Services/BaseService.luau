@@ -16,6 +16,7 @@ local GROUND_Y = 0
 
 export type Base = {
 	Index: number,
+	Frame: CFrame, -- origem no núcleo, LookVector apontando para o centro do mapa
 	Model: Model,
 	Spawn: Vector3,
 	Core: Vector3,
@@ -129,8 +130,11 @@ local function loadBase(index: number, container: Instance): Base
 
 	local spawnPart = model:FindFirstChild("Spawn") :: BasePart
 	local corePart = model:FindFirstChild("Core") :: BasePart
+	local core = Vector3.new(corePart.Position.X, spawnPart.Position.Y, corePart.Position.Z)
+	local towardCenter = (core - spawnPart.Position).Unit
 	return {
 		Index = index,
+		Frame = CFrame.lookAt(core, core + towardCenter),
 		Model = model,
 		Spawn = spawnPart.Position,
 		Core = Vector3.new(corePart.Position.X, spawnPart.Position.Y, corePart.Position.Z),

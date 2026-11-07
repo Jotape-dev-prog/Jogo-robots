@@ -84,6 +84,11 @@ local function refresh()
 		local n = maxRolls()
 		buttons.Roll.Text = `Girar x{n} ({formatNumber(n * Economy.RollCost)})`
 		buttons.AutoFuse.Text = if data.Settings.AutoFuse then "Auto-Fundir: ON" else "Auto-Fundir: OFF"
+		local income = Economy.FactoryIncome(data.Factory.Lines) * (1 + data.Rebirths * 0.5)
+		labels.Factory.Text = `🏭 Fábrica: +{formatNumber(income)}/s`
+		labels.Weapon.Text = if data.AvatarWeapon ~= ""
+			then `⚔ {Items.DisplayName(data.AvatarWeapon)} (clique / F)`
+			else "⚔ Sem arma no avatar"
 	end
 	if hordeState then
 		local s = hordeState.Data
@@ -179,7 +184,7 @@ function Hud.Build()
 	-- Painel de status (canto superior esquerdo)
 	local panel = Instance.new("Frame")
 	panel.Position = UDim2.new(0, 12, 0, 12)
-	panel.Size = UDim2.new(0, 300, 0, 150)
+	panel.Size = UDim2.new(0, 320, 0, 206)
 	panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 	panel.BackgroundTransparency = 0.35
 	panel.Parent = gui
@@ -200,7 +205,9 @@ function Hud.Build()
 	makeLabel("Wave", panel, 2)
 	makeLabel("Invasions", panel, 3)
 	makeLabel("Status", panel, 4)
-	makeLabel("Checkpoint", panel, 5).TextColor3 = Color3.fromRGB(190, 190, 190)
+	makeLabel("Factory", panel, 5)
+	makeLabel("Weapon", panel, 6)
+	makeLabel("Checkpoint", panel, 7).TextColor3 = Color3.fromRGB(190, 190, 190)
 
 	-- Barra de botões (parte de baixo)
 	local bar = Instance.new("Frame")

@@ -17,6 +17,11 @@ Net.Functions = {
 	"SetAutoSettings", -- (autoFuse: boolean, autoSellBelowTier: number)
 	"BuyUpgrade", -- (name: string)
 	"StartFromCheckpoint", -- (wave: number)
+	"Attack", -- (aim: Vector3?) golpe do avatar
+	"EquipAvatarWeapon", -- (key: string | "")
+	"EquipWorker", -- (lineId: string, slot: string, key: string | "")
+	"BuyFactoryLine", -- () compra a próxima linha (mesmo efeito do painel)
+	"DevGiveCash", -- (amount) SÓ NO STUDIO: dinheiro para testes
 }
 
 local FOLDER_NAME = "Remotes"
