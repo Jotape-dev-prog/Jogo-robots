@@ -15,8 +15,10 @@ local RebirthService = require(Services.RebirthService)
 local SocialService = require(Services.SocialService)
 local PvpService = require(Services.PvpService)
 local WorldService = require(Services.WorldService)
+local MapService = require(Services.MapService)
 
 BaseService.Start() -- 1º: atribui a base ao jogador assim que os dados carregam
+MapService.Start() -- caminhos de cada base até a arena (depende das bases)
 HordeService.Start() -- 2º: inicia a horda na base atribuída
 FactoryService.Start() -- 3º: monta a fábrica na base atribuída
 AvatarService.Start()

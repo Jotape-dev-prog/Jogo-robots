@@ -60,6 +60,12 @@ local function tierOf(key: string): number?
 	return if item then item.Tier else nil
 end
 
+-- Faixa visual: 1 = sucata (tiers 1-3), 2 = industrial (4-6), 3 = futurista (7-9).
+local function bandOf(key: string): number
+	local tier = tierOf(key) or 1
+	return if tier <= 3 then 1 elseif tier <= 6 then 2 else 3
+end
+
 local function paint(key: string): (Color3, Style)
 	local tier = tierOf(key) or 1
 	local style = styleFor(tier)
@@ -220,6 +226,216 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 			Enum.Material.Metal
 		)
 	end
+	-- Detalhes de forma por faixa (além do material): cada peça muda de silhueta ao subir de faixa.
+	local DARK = Color3.fromRGB(45, 42, 40)
+	if pad.Torso ~= "" then
+		local c, _ = paint(pad.Torso)
+		local band = bandOf(pad.Torso)
+		local glow = Rarity.Get(tierOf(pad.Torso) or 1).Color
+		if band == 1 then
+			-- Sucata: placa remendada torta e parafusos
+			block(
+				m,
+				"Patch",
+				Vector3.new(1, 0.8, 0.1),
+				up * CFrame.new(-0.8, 3.4, -0.93) * CFrame.Angles(0, 0, math.rad(12)),
+				RUST,
+				Enum.Material.CorrodedMetal
+			)
+			for _, x in { -1.2, 1.2 } do
+				block(
+					m,
+					"Bolt",
+					Vector3.new(0.25, 0.25, 0.25),
+					up * CFrame.new(x, 4.9, -0.92),
+					DARK,
+					Enum.Material.Metal,
+					Enum.PartType.Ball
+				)
+			end
+		elseif band == 2 then
+			-- Industrial: grade de ventilação e tanque nas costas
+			for i = 0, 2 do
+				block(
+					m,
+					"Vent",
+					Vector3.new(1.6, 0.12, 0.1),
+					up * CFrame.new(0, 3.2 + i * 0.25, -0.93),
+					DARK,
+					Enum.Material.Metal
+				)
+			end
+			block(
+				m,
+				"Tank",
+				Vector3.new(1.8, 1, 1),
+				up * CFrame.new(0, 4, 1.3) * CFrame.Angles(0, 0, math.rad(90)),
+				c:Lerp(DARK, 0.3),
+				Enum.Material.Metal,
+				Enum.PartType.Cylinder
+			)
+		else
+			-- Futurista: peito afinado (cunhas) e linhas de energia
+			for _, side in { -1, 1 } do
+				block(
+					m,
+					"ChestFin",
+					Vector3.new(0.4, 2.2, 1.6),
+					up * CFrame.new(side * 1.6, 4, 0) * CFrame.Angles(0, 0, math.rad(side * -12)),
+					c,
+					Enum.Material.SmoothPlastic
+				)
+				block(
+					m,
+					"EnergyLine",
+					Vector3.new(0.12, 2, 0.1),
+					up * CFrame.new(side * 0.8, 3.9, -0.93),
+					glow,
+					Enum.Material.Neon
+				)
+			end
+		end
+	end
+	if pad.Arms ~= "" then
+		local c, _ = paint(pad.Arms)
+		local band = bandOf(pad.Arms)
+		local glow = Rarity.Get(tierOf(pad.Arms) or 1).Color
+		for _, side in { -1, 1 } do
+			if band == 1 then
+				-- Sucata: braço com mola/fio exposto
+				block(
+					m,
+					"Wire",
+					Vector3.new(0.15, 1.6, 0.15),
+					up * CFrame.new(side * 2.4, 3.6, 0.3),
+					Color3.fromRGB(160, 90, 40),
+					Enum.Material.Metal
+				)
+			elseif band == 2 then
+				-- Industrial: ombreiras grossas
+				block(
+					m,
+					"Shoulder",
+					Vector3.new(1.4, 0.7, 1.3),
+					up * CFrame.new(side * 2, 5.1, 0),
+					c:Lerp(DARK, 0.2),
+					Enum.Material.DiamondPlate
+				)
+			else
+				-- Futurista: ombreira em barbatana com ponta brilhante
+				block(
+					m,
+					"ShoulderFin",
+					Vector3.new(0.3, 1.4, 1.2),
+					up * CFrame.new(side * 2.2, 5.4, 0.1) * CFrame.Angles(0, 0, math.rad(side * -25)),
+					c,
+					Enum.Material.SmoothPlastic
+				)
+				block(
+					m,
+					"FinTip",
+					Vector3.new(0.32, 0.3, 1.22),
+					up * CFrame.new(side * 2.5, 6.05, 0.1) * CFrame.Angles(0, 0, math.rad(side * -25)),
+					glow,
+					Enum.Material.Neon
+				)
+			end
+		end
+	end
+	if pad.Head ~= "" then
+		local c, _ = paint(pad.Head)
+		local band = bandOf(pad.Head)
+		local glow = Rarity.Get(tierOf(pad.Head) or 1).Color
+		if band == 1 then
+			-- Sucata: antena torta extra e olho de lâmpada
+			block(
+				m,
+				"BentAntenna",
+				Vector3.new(0.12, 0.9, 0.12),
+				up * CFrame.new(-0.5, 6.9, 0) * CFrame.Angles(0, 0, math.rad(30)),
+				c,
+				Enum.Material.Metal
+			)
+			block(
+				m,
+				"Bulb",
+				Vector3.new(0.35, 0.35, 0.35),
+				up * CFrame.new(-0.75, 7.35, 0),
+				Color3.fromRGB(255, 200, 80),
+				Enum.Material.Neon,
+				Enum.PartType.Ball
+			)
+		elseif band == 2 then
+			-- Industrial: capacete com viseira
+			block(
+				m,
+				"Helmet",
+				Vector3.new(1.8, 0.5, 1.7),
+				up * CFrame.new(0, 6.7, 0),
+				c:Lerp(DARK, 0.25),
+				Enum.Material.DiamondPlate
+			)
+			block(
+				m,
+				"Visor",
+				Vector3.new(1.5, 0.15, 0.4),
+				up * CFrame.new(0, 6.42, -0.95),
+				DARK,
+				Enum.Material.Metal
+			)
+		else
+			-- Futurista: cúpula arredondada e auréola de energia
+			block(
+				m,
+				"Dome",
+				Vector3.new(1.7, 1.2, 1.6),
+				up * CFrame.new(0, 6.5, 0),
+				c,
+				Enum.Material.SmoothPlastic,
+				Enum.PartType.Ball
+			)
+			block(
+				m,
+				"Halo",
+				Vector3.new(0.12, 2, 2),
+				up * CFrame.new(0, 7.3, 0) * CFrame.Angles(0, 0, math.rad(90)),
+				glow,
+				Enum.Material.Neon,
+				Enum.PartType.Cylinder
+			).Transparency =
+				0.3
+		end
+	end
+	if pad.Legs ~= "" then
+		local c, _ = paint(pad.Legs)
+		local band = bandOf(pad.Legs)
+		local glow = Rarity.Get(tierOf(pad.Legs) or 1).Color
+		for _, side in { -1, 1 } do
+			if band == 2 then
+				-- Industrial: joelheiras
+				block(
+					m,
+					"KneePad",
+					Vector3.new(1, 0.6, 0.4),
+					up * CFrame.new(side * 0.7, 1.5, -0.6),
+					c:Lerp(DARK, 0.2),
+					Enum.Material.DiamondPlate
+				)
+			elseif band == 3 then
+				-- Futurista: propulsores nos pés
+				block(
+					m,
+					"Thruster",
+					Vector3.new(0.3, 0.7, 0.7),
+					up * CFrame.new(side * 0.7, 0.4, 0.7) * CFrame.Angles(0, 0, math.rad(90)),
+					glow,
+					Enum.Material.Neon,
+					Enum.PartType.Cylinder
+				)
+			end
+		end
+	end
+
 	if pad.Weapon ~= "" then
 		Models.Weapon(m, pad.Weapon, up * CFrame.new(1.95, 2.6, -0.6), 1.1)
 	end

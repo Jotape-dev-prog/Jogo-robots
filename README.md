@@ -32,6 +32,7 @@ src/
       BaseService       5 bases ao redor do centro, grid hexagonal e ponto A (gera placeholder)
       RobotService      robôs do grid: perseguem zumbis; vida salva entre hordas, quebrado só volta na derrota
       HordeService      horda instanciada, zumbis caçam robôs e depois a base, pausa do jogador, checkpoints
+      MapService        mapa em estrela: caminho de cada base até a arena, props, limpa a vegetação
       RebirthService    Rebirth: troca progresso por multiplicador permanente + giros grátis
       PvpService        ciclo 20/10 min, arena King of the Hill, zona contestada, bônus do vencedor
       SocialService     alianças e trocas seguras (horda 20+, confirmação dupla, troca atômica)

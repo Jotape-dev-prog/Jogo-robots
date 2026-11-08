@@ -27,6 +27,7 @@ local BaseService = require(script.Parent.BaseService)
 local HordeService = require(script.Parent.HordeService)
 local SocialService = require(script.Parent.SocialService)
 local RobotService = require(script.Parent.RobotService)
+local MapService = require(script.Parent.MapService)
 local RemoteGuard = require(script.Parent.RemoteGuard)
 
 type Phase = "Hordes" | "Open"
@@ -70,26 +71,11 @@ local function part(props: { [string]: any }, parent: Instance): Part
 	return p
 end
 
--- Vegetação decorativa dentro da arena sai do caminho durante o jogo (o mapa salvo não muda).
-local VEGETATION = { Arvore = true, Pinheiro = true, Arbusto = true, Pedra = true }
-
-local function clearVegetation()
-	local stash = Instance.new("Folder")
-	stash.Name = "ArenaVegetation"
-	stash.Parent = game:GetService("ServerStorage")
-	local seen: { [Instance]: boolean } = {}
-	for _, p in workspace:GetPartBoundsInRadius(Pvp.Center, Pvp.ArenaRadius + 4) do
-		local model = p:FindFirstAncestorOfClass("Model")
-		local target: Instance = model or p
-		if not seen[target] and VEGETATION[target.Name] then
-			seen[target] = true
-			target.Parent = stash
-		end
-	end
-end
-
 local function buildArena(): Model
-	clearVegetation()
+	MapService.ClearVegetation(
+		CFrame.new(Pvp.Center),
+		Vector3.new(Pvp.ArenaRadius * 2 + 8, 80, Pvp.ArenaRadius * 2 + 8)
+	)
 	local existing = workspace:FindFirstChild("Arena")
 	if existing and existing:IsA("Model") then
 		return existing

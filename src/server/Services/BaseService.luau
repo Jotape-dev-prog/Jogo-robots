@@ -320,6 +320,10 @@ function BaseService.TeleportHome(player: Player)
 	end
 end
 
+function BaseService.All(): { Base }
+	return bases
+end
+
 function BaseService.Get(player: Player): Base?
 	return playerBase[player]
 end
