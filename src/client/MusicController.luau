@@ -12,10 +12,10 @@ local SoundService = game:GetService("SoundService")
 local State = require(script.Parent.State)
 
 local TRACKS: { [string]: { Id: string, Volume: number } } = {
-	Base = { Id = "", Volume = 0.25 },
-	Horde = { Id = "", Volume = 0.3 },
-	Boss = { Id = "", Volume = 0.35 },
-	Pvp = { Id = "", Volume = 0.35 },
+	Base = { Id = "rbxassetid://120757329813295", Volume = 0.25 }, -- "Campfire Song" (DistroKid)
+	Horde = { Id = "rbxassetid://9045941477", Volume = 0.3 }, -- APM "Mission Danger - Underscore"
+	Boss = { Id = "rbxassetid://9044584201", Volume = 0.35 }, -- APM "Evil Overlord (A)"
+	Pvp = { Id = "rbxassetid://9046270168", Volume = 0.35 }, -- APM "110 Percent E" (rock)
 }
 local FADE = 1.5
 
