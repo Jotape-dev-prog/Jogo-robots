@@ -223,8 +223,11 @@ function DataService.Increment(player: Player, path: { string }, delta: number):
 	return DataService.Set(player, path, current + delta)
 end
 
-local function cashMultiplier(data: PlayerData): number
-	return 1 + data.Rebirths * 0.5
+local Economy = require(game:GetService("ReplicatedStorage").Shared.Config.Economy)
+local Buffs = require(script.Parent.Parent.Buffs)
+
+local function cashMultiplier(player: Player, data: PlayerData): number
+	return Economy.CashMultiplier(data.Rebirths) * Buffs.Get(player, "Cash")
 end
 
 -- Adiciona dinheiro. applyMultipliers aplica rebirth (use em recompensas, não em reembolsos).
@@ -233,7 +236,9 @@ function DataService.AddCash(player: Player, amount: number, applyMultipliers: b
 	if not data or amount <= 0 then
 		return 0
 	end
-	local final = if applyMultipliers then math.floor(amount * cashMultiplier(data)) else math.floor(amount)
+	local final = if applyMultipliers
+		then math.floor(amount * cashMultiplier(player, data))
+		else math.floor(amount)
 	DataService.Set(player, { "Cash" }, data.Cash + final)
 	DataService.Set(player, { "TotalEarned" }, data.TotalEarned + final)
 	return final

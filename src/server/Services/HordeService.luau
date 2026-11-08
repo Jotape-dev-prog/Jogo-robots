@@ -576,6 +576,24 @@ function HordeService.PlayerAttack(
 	return #hits, kills
 end
 
+-- Rebirth: descarta a horda atual e volta para a horda 1 (intervalo curto antes de começar).
+function HordeService.ResetProgress(player: Player)
+	local run = runs[player]
+	if not run then
+		return
+	end
+	clearZombies(run)
+	run.Invasions = 0
+	ui(run, "Invasions", 0)
+	if run.State == "Paused" then
+		run.Wave = 1
+		ui(run, "Wave", 1)
+	else
+		enterIntermission(run, 1, HordeConfig.IntermissionSeconds)
+	end
+	syncCounts(run)
+end
+
 -- Pausa/retoma todas as hordas (usado pelo ciclo de PvP).
 function HordeService.SetPaused(value: boolean)
 	paused = value

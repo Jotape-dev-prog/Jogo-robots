@@ -313,6 +313,13 @@ function BaseService.Start()
 	Players.PlayerRemoving:Connect(release)
 end
 
+-- Leva o personagem de volta para a frente do núcleo da própria base.
+function BaseService.TeleportHome(player: Player)
+	if player.Character then
+		task.spawn(teleportToBase, player, player.Character)
+	end
+end
+
 function BaseService.Get(player: Player): Base?
 	return playerBase[player]
 end

@@ -15,6 +15,7 @@ local RemoteGuard = require(script.Parent.RemoteGuard)
 local RobotService = require(script.Parent.RobotService)
 local AvatarService = require(script.Parent.AvatarService)
 local FactoryService = require(script.Parent.FactoryService)
+local Buffs = require(script.Parent.Parent.Buffs)
 
 local rng = Random.new()
 local globalLuckMultiplier = 1 -- eventos globais (ex.: 5x sorte) alteram isto
@@ -44,7 +45,7 @@ end
 function InventoryService.Luck(player: Player): number
 	local data = DataService.Get(player)
 	local upgrade = if data then (data.Upgrades.Luck or 0) * Economy.Upgrades.Luck.PerLevel else 0
-	return (1 + upgrade) * globalLuckMultiplier
+	return (1 + upgrade) * globalLuckMultiplier * Buffs.Get(player, "Luck")
 end
 
 function InventoryService.SetGlobalLuckMultiplier(multiplier: number)
@@ -95,14 +96,25 @@ end
 -- Roleta
 --------------------------------------------------------------------------------
 
-local function rollOne(player: Player): string
-	local tier = Rarity.Roll(rng, InventoryService.Luck(player))
+local function rollOne(player: Player, luckMultiplier: number?): string
+	local tier = Rarity.Roll(rng, InventoryService.Luck(player) * (luckMultiplier or 1))
 	if rng:NextNumber() < Items.WeaponRollChance then
 		local weaponType = Items.WeaponTypes[rng:NextInteger(1, #Items.WeaponTypes)]
 		return Items.WeaponKey(weaponType, tier)
 	end
 	local slot = Items.PartSlots[rng:NextInteger(1, #Items.PartSlots)]
 	return Items.PartKey(slot, tier)
+end
+
+-- Giros grátis (loot do Rebirth). Não passam pelo Auto-Vender: é recompensa.
+function InventoryService.GrantRolls(player: Player, count: number, luckMultiplier: number): { any }
+	local results = {}
+	for _ = 1, count do
+		local key = rollOne(player, luckMultiplier)
+		DataService.AddItem(player, key, 1)
+		table.insert(results, { Key = key, Tier = (Items.Parse(key) :: Items.ParsedItem).Tier, Sold = false })
+	end
+	return results
 end
 
 local function handleRoll(player: Player, count: any): RemoteGuard.Result

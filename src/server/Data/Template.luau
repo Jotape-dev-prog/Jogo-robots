@@ -42,6 +42,7 @@ export type PlayerData = {
 		AutoSellBelowTier: number, -- 0 = desligado; vende automaticamente itens com tier < valor
 		HordePaused: boolean, -- jogador pausou as hordas para focar no tycoon
 	},
+	TradeLog: { any }, -- últimas 20 trocas { T, With, Gave, Got }
 	Stats: {
 		Kills: number,
 		Rolls: number,
@@ -83,6 +84,7 @@ local Template: PlayerData = {
 	Factory = { Lines = lines },
 	Upgrades = { KillValue = 0, Rolls = 0, Luck = 0, Grid = 0 },
 	Settings = { AutoFuse = false, AutoSellBelowTier = 0, HordePaused = false },
+	TradeLog = {},
 	Stats = { Kills = 0, Rolls = 0, Defeats = 0 },
 }
 

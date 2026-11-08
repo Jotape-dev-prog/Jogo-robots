@@ -11,12 +11,20 @@ local HordeService = require(Services.HordeService)
 local InventoryService = require(Services.InventoryService)
 local AvatarService = require(Services.AvatarService)
 local FactoryService = require(Services.FactoryService)
+local RebirthService = require(Services.RebirthService)
+local SocialService = require(Services.SocialService)
+local PvpService = require(Services.PvpService)
+local WorldService = require(Services.WorldService)
 
 BaseService.Start() -- 1º: atribui a base ao jogador assim que os dados carregam
 HordeService.Start() -- 2º: inicia a horda na base atribuída
 FactoryService.Start() -- 3º: monta a fábrica na base atribuída
 AvatarService.Start()
 InventoryService.Start()
+RebirthService.Start()
+SocialService.Start()
+PvpService.Start()
+WorldService.Start()
 -- Comando de QA: só existe no Studio. Em servidores reais o remote responde "Indisponível".
 if game:GetService("RunService"):IsStudio() then
 	RemoteGuard.Handle("DevGiveCash", 5, 1, function(player, amount)
@@ -24,6 +32,13 @@ if game:GetService("RunService"):IsStudio() then
 			return RemoteGuard.Fail("Quantidade inválida")
 		end
 		DataService.AddCash(player, amount, false)
+		return { Ok = true }
+	end)
+	RemoteGuard.Handle("DevSetHighestWave", 5, 1, function(player, wave)
+		if not RemoteGuard.IsInt(wave, 1, 1000) then
+			return RemoteGuard.Fail("Horda inválida")
+		end
+		DataService.Set(player, { "Horde", "Highest" }, wave)
 		return { Ok = true }
 	end)
 end

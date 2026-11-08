@@ -24,6 +24,33 @@ Economy.Upgrades = {
 
 Economy.RebirthCashMultiplier = 0.5 -- +50% moeda por rebirth
 
+-- Rebirth: zera dinheiro, hordas, upgrades e fábrica; mantém inventário e robôs.
+-- Requisito do rebirth nº n (0 = primeiro): chegar à horda Wave e ter Cost de dinheiro.
+Economy.Rebirth = {
+	BaseWave = 20,
+	WavePerRebirth = 10,
+	BaseCost = 20000,
+	CostGrowth = 4,
+	-- Loot extra: giros grátis com sorte multiplicada
+	BonusRollsBase = 5,
+	BonusRollsPerRebirth = 2,
+	BonusLuck = 3,
+}
+
+function Economy.RebirthRequirement(rebirths: number): (number, number)
+	local r = Economy.Rebirth
+	return r.BaseWave + r.WavePerRebirth * rebirths, math.floor(r.BaseCost * r.CostGrowth ^ rebirths)
+end
+
+function Economy.RebirthBonusRolls(rebirths: number): number
+	-- rebirths = quantos já tinha ANTES deste
+	return Economy.Rebirth.BonusRollsBase + Economy.Rebirth.BonusRollsPerRebirth * rebirths
+end
+
+function Economy.CashMultiplier(rebirths: number): number
+	return 1 + rebirths * Economy.RebirthCashMultiplier
+end
+
 -- Fábrica: 3 andares × 2 linhas. Linhas são compradas em ordem; andares altos multiplicam a renda.
 Economy.Factory = {
 	Floors = 3,

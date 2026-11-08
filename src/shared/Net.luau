@@ -23,7 +23,20 @@ Net.Functions = {
 	"EquipAvatarWeapon", -- (key: string | "")
 	"EquipWorker", -- (lineId: string, slot: string, key: string | "")
 	"BuyFactoryLine", -- () compra a próxima linha (mesmo efeito do painel)
+	"PvpTravel", -- (toArena: boolean) vai para a arena (só com o centro aberto) ou volta para a base
+	"AllyRequest", -- (userId) convida (ou aceita, se o outro já convidou)
+	"AllyRespond", -- (userId, accept: boolean)
+	"AllyLeave", -- (userId) desfaz a aliança
+	"TradeRequest", -- (userId) convida para trocar (horda 20+)
+	"TradeRespond", -- (userId, accept: boolean)
+	"TradeSetItem", -- (key, amount) quantas cópias do item entram na sua oferta
+	"TradeReady", -- (ready: boolean)
+	"TradeConfirm", -- () depois da contagem, os dois confirmam
+	"TradeCancel", -- ()
+	"Rebirth", -- () troca o progresso por multiplicador permanente + giros grátis
 	"DevGiveCash", -- (amount) SÓ NO STUDIO: dinheiro para testes
+	"DevSetHighestWave", -- (wave) SÓ NO STUDIO: libera requisitos de horda para testes
+	"DevSkipPvpPhase", -- () SÓ NO STUDIO: pula para a próxima fase do ciclo de PvP
 }
 
 local FOLDER_NAME = "Remotes"

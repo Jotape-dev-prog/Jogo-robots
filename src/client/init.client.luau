@@ -7,6 +7,9 @@ local SoundController = require(script.SoundController)
 local Hud = require(script.Hud)
 local CombatController = require(script.CombatController)
 local GridController = require(script.GridController)
+local PvpHud = require(script.PvpHud)
+local TutorialController = require(script.TutorialController)
+local MusicController = require(script.MusicController)
 
 local Windows = script.Windows
 local Roll = require(Windows.Roll)
@@ -15,6 +18,8 @@ local Robots = require(Windows.Robots)
 local Factory = require(Windows.Factory)
 local Upgrades = require(Windows.Upgrades)
 local Defeat = require(Windows.Defeat)
+local Social = require(Windows.Social)
+local Trade = require(Windows.Trade)
 
 State.SetErrorHandler(function(message)
 	Ui.Toast(message, Ui.Theme.Bad)
@@ -28,8 +33,14 @@ local windows = {
 	Robots = Robots.Create(),
 	Factory = Factory.Create(),
 	Upgrades = Upgrades.Create(),
+	Social = Social.Create(),
 }
+local tradeWindow = Trade.Create()
+Social.OpenTrade = tradeWindow.Open
 Hud.Build(windows)
+PvpHud.Build()
+TutorialController.Start()
+MusicController.Start()
 
 -- Painéis da base (máquina da roleta, bancada da forja) abrem a janela correspondente.
 game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt)
