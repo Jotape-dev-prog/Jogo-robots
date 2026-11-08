@@ -8,6 +8,9 @@
 --     Isso é a dificuldade do jogo. A vida fica salva no perfil (PlayerData.RobotHp), então sair e
 --     voltar não conserta nada.
 --   • Robô quebrado não pode ter peças trocadas (evita "consertar" reequipando).
+--   • PvP: quando o dono entra na arena, os robôs vivos vão junto (escolta), seguem o dono e lutam
+--     contra jogadores e robôs inimigos. Ao sair da arena ou quando o centro fecha, voltam para casa
+--     com a vida que tinham antes do PvP (o PvP não gasta a vida da defesa).
 --   • HP = soma das peças × multiplicador do tier. Pernas aumentam a velocidade.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -16,9 +19,11 @@ local Shared = ReplicatedStorage.Shared
 local Rarity = require(Shared.Config.Rarity)
 local Items = require(Shared.Config.Items)
 local Grid = require(Shared.Config.Grid)
+local Pvp = require(Shared.Config.Pvp)
 
 local Types = require(script.Parent.Parent.Types)
 local Combat = require(script.Parent.Parent.Combat)
+local Fx = require(script.Parent.Parent.Fx)
 local Models = require(script.Parent.Parent.Models)
 local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
@@ -36,6 +41,7 @@ export type Robot = {
 	Hp: number,
 	MaxHp: number,
 	Weapon: Items.WeaponStats?,
+	WeaponTier: number,
 	Damage: number,
 	Speed: number,
 	NextAttack: number,
@@ -52,6 +58,9 @@ local ROBOT_HEIGHT_OFFSET = 0.2
 local RobotService = {}
 
 local robots: { [Player]: { [string]: Robot } } = {}
+-- Escolta do PvP: vida de cada robô antes de ir para a arena (restaurada na volta).
+type Snapshot = { Ratio: number, Broken: boolean }
+local escorts: { [Player]: { [string]: Snapshot } } = {}
 local hpListener: HpListener? = nil
 
 local function computeStats(loadout: { [string]: string }): (number, Items.WeaponStats?, number, number)
@@ -229,6 +238,7 @@ function RobotService.RefreshCell(player: Player, cell: string)
 		Hp = hp,
 		MaxHp = maxHp,
 		Weapon = weapon,
+		WeaponTier = (Items.Parse(loadout.Weapon) or { Tier = 1 } :: any).Tier,
 		Damage = damage,
 		Speed = speed,
 		NextAttack = 0,
@@ -262,8 +272,14 @@ function RobotService.SaveHp(player: Player)
 		return
 	end
 	local saved: { [string]: number } = {}
+	local snapshot = escorts[player]
 	for cell, robot in perPlayer do
 		local ratio = if robot.Broken or robot.MaxHp <= 0 then 0 else robot.Hp / robot.MaxHp
+		local before = if snapshot then snapshot[cell] else nil
+		if before then
+			-- Na arena: o que vale para a defesa é a vida de antes do PvP.
+			ratio = if before.Broken then 0 else before.Ratio
+		end
 		if ratio < 0.999 then
 			saved[cell] = math.floor(ratio * 1000) / 1000
 		end
@@ -416,9 +432,12 @@ function RobotService.Step(
 			end
 			if dist <= weapon.Range and now >= robot.NextAttack then
 				robot.NextAttack = now + weapon.Cooldown
+				local hitPositions: { Vector3 } = {}
 				for _, z in Combat.Resolve(weapon, robot.Position, robot.Facing, zombies, target) do
+					table.insert(hitPositions, z.Position)
 					dealDamage(z, robot.Damage, weapon.Stun)
 				end
+				Fx.Attack(weapon, robot.Position, robot.Facing, hitPositions)
 			end
 		else
 			-- Sem alvo: volta caminhando para o hexágono.
@@ -483,6 +502,10 @@ function RobotService.MoveRobot(player: Player, from: string, to: string): boole
 	local perPlayer = robots[player] or {}
 	local ra, rb = perPlayer[from], perPlayer[to]
 	perPlayer[to], perPlayer[from] = ra, rb
+	local snapshot = escorts[player]
+	if snapshot then
+		snapshot[to], snapshot[from] = snapshot[from], snapshot[to]
+	end
 	for cell, robot in { [to] = ra, [from] = rb } :: { [string]: Robot? } do
 		if robot then
 			robot.Cell = cell
@@ -500,6 +523,183 @@ function RobotService.MoveRobot(player: Player, from: string, to: string): boole
 	return true
 end
 
+--------------------------------------------------------------------------------
+-- Escolta no PvP
+--------------------------------------------------------------------------------
+
+local FOLLOW_RADIUS = 6 -- distância dos robôs em volta do dono
+local ENGAGE_RANGE = 40 -- até onde um robô sai do lado do dono para atacar
+local LEASH = 70 -- longe demais do dono: teleporta para perto dele
+
+function RobotService.IsEscorting(player: Player): boolean
+	return escorts[player] ~= nil
+end
+
+-- Robôs vivos vão para perto do dono (que acabou de entrar na arena).
+function RobotService.BeginEscort(player: Player, ownerPosition: Vector3)
+	local perPlayer = robots[player]
+	if not perPlayer or escorts[player] then
+		return
+	end
+	local snapshot: { [string]: Snapshot } = {}
+	local alive: { Robot } = {}
+	for cell, robot in perPlayer do
+		snapshot[cell] = {
+			Ratio = if robot.MaxHp > 0 then robot.Hp / robot.MaxHp else 1,
+			Broken = robot.Broken,
+		}
+		if not robot.Broken then
+			table.insert(alive, robot)
+		end
+	end
+	escorts[player] = snapshot
+	for i, robot in alive do
+		local angle = (i / math.max(1, #alive)) * math.pi * 2
+		placeAt(robot, ownerPosition + Vector3.new(math.cos(angle), 0, math.sin(angle)) * FOLLOW_RADIUS)
+	end
+end
+
+-- Volta para casa com a vida de antes do PvP.
+function RobotService.EndEscort(player: Player)
+	local snapshot = escorts[player]
+	if not snapshot then
+		return
+	end
+	escorts[player] = nil
+	for cell, robot in robots[player] or {} do
+		local before = snapshot[cell]
+		if before then
+			robot.Broken = before.Broken
+			robot.Hp = if before.Broken then 0 else robot.MaxHp * before.Ratio
+		end
+		placeAt(robot, robot.Home)
+		notify(player, robot)
+	end
+end
+
+-- Alvos que os inimigos podem atacar: robôs vivos da escolta deste jogador.
+function RobotService.EscortTargets(player: Player): { any }
+	local list = {}
+	if not escorts[player] then
+		return list
+	end
+	for _, robot in robots[player] or {} do
+		if not robot.Broken then
+			table.insert(
+				list,
+				{ Position = robot.Position, Dead = false, StunnedUntil = 0, Robot = robot, Owner = player }
+			)
+		end
+	end
+	return list
+end
+
+type PvpHit = (target: any, robot: Robot) -> ()
+
+local function clampToArena(position: Vector3): Vector3
+	local offset = Vector3.new(position.X - Pvp.Center.X, 0, position.Z - Pvp.Center.Z)
+	local limit = Pvp.ArenaRadius - 2
+	if offset.Magnitude > limit then
+		offset = offset.Unit * limit
+	end
+	return Vector3.new(Pvp.Center.X + offset.X, position.Y, Pvp.Center.Z + offset.Z)
+end
+
+-- Um passo da escolta: cada robô ataca o inimigo mais próximo ou acompanha o dono.
+function RobotService.StepPvp(
+	player: Player,
+	owner: Vector3,
+	enemies: { any },
+	now: number,
+	dt: number,
+	hit: PvpHit
+)
+	local perPlayer = robots[player]
+	if not perPlayer or not escorts[player] then
+		return
+	end
+	local parts: { BasePart } = {}
+	local frames: { CFrame } = {}
+	local alive: { Robot } = {}
+	for _, robot in perPlayer do
+		if not robot.Broken then
+			table.insert(alive, robot)
+		end
+	end
+	table.sort(alive, function(a, b)
+		return a.Cell < b.Cell
+	end)
+	for i, robot in alive do
+		if flat(robot.Position - owner).Magnitude > LEASH then
+			local angle = (i / #alive) * math.pi * 2
+			robot.Position = owner + Vector3.new(math.cos(angle), 0, math.sin(angle)) * FOLLOW_RADIUS
+		end
+		local weapon = robot.Weapon
+		local target: any = nil
+		if weapon then
+			local best = ENGAGE_RANGE
+			for _, enemy in enemies do
+				local d = flat(enemy.Position - robot.Position).Magnitude
+				if
+					not enemy.Dead
+					and d < best
+					and flat(enemy.Position - owner).Magnitude < ENGAGE_RANGE + 10
+				then
+					best, target = d, enemy
+				end
+			end
+		end
+
+		local move = Vector3.zero
+		if target and weapon then
+			local toTarget = flat(target.Position - robot.Position)
+			local dist = toTarget.Magnitude
+			robot.Facing = if dist > 0.01 then toTarget.Unit else robot.Facing
+			local want = engageDistance(weapon)
+			if dist > want then
+				move = toTarget.Unit * math.min(robot.Speed * 1.2 * dt, dist - want)
+			end
+			if dist <= weapon.Range and now >= robot.NextAttack then
+				robot.NextAttack = now + weapon.Cooldown
+				local hitPositions: { Vector3 } = {}
+				for _, enemy in Combat.Resolve(weapon, robot.Position, robot.Facing, enemies :: any, target) do
+					table.insert(hitPositions, enemy.Position)
+					hit(enemy, robot)
+				end
+				Fx.Attack(weapon, robot.Position, robot.Facing, hitPositions)
+			end
+		else
+			-- Acompanha o dono, cada robô no seu lugar em volta dele.
+			local angle = (i / #alive) * math.pi * 2
+			local slot = owner + Vector3.new(math.cos(angle), 0, math.sin(angle)) * FOLLOW_RADIUS
+			local toSlot = flat(slot - robot.Position)
+			if toSlot.Magnitude > 1 then
+				move = toSlot.Unit * math.min(robot.Speed * 1.6 * dt, toSlot.Magnitude)
+				robot.Facing = toSlot.Unit
+			end
+		end
+		for _, other in alive do
+			if other ~= robot then
+				local away = flat(robot.Position - other.Position)
+				local d = away.Magnitude
+				if d > 0.01 and d < SEPARATION then
+					move += away.Unit * (SEPARATION - d) * 0.5
+				end
+			end
+		end
+		robot.Position = clampToArena(robot.Position + move)
+		local root = robot.Root
+		if root then
+			local ground = Vector3.new(robot.Position.X, robot.Home.Y + ROBOT_HEIGHT_OFFSET, robot.Position.Z)
+			table.insert(parts, root)
+			table.insert(frames, CFrame.lookAt(ground, ground + robot.Facing))
+		end
+	end
+	if #parts > 0 then
+		workspace:BulkMoveTo(parts, frames, Enum.BulkMoveMode.FireCFrameChanged)
+	end
+end
+
 function RobotService.Clear(player: Player)
 	for _, robot in robots[player] or {} do
 		if robot.Model then
@@ -507,6 +707,7 @@ function RobotService.Clear(player: Player)
 		end
 	end
 	robots[player] = nil
+	escorts[player] = nil
 end
 
 RobotService.PaintCells = paintCells

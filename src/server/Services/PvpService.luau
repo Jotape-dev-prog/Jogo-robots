@@ -26,6 +26,7 @@ local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
 local HordeService = require(script.Parent.HordeService)
 local SocialService = require(script.Parent.SocialService)
+local RobotService = require(script.Parent.RobotService)
 local RemoteGuard = require(script.Parent.RemoteGuard)
 
 type Phase = "Hordes" | "Open"
@@ -130,6 +131,73 @@ local function buildArena(): Model
 		Color = Color3.fromRGB(200, 70, 60),
 		CanCollide = false,
 	}, model)
+	-- Decoração Cyber-Rustic: borda de pedra, postes com lanternas, barricadas de sucata.
+	local decor = Instance.new("Folder")
+	decor.Name = "Decor"
+	decor.Parent = model
+	part({
+		Name = "Rim",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(1.6, Pvp.ArenaRadius * 2 + 4, Pvp.ArenaRadius * 2 + 4),
+		CFrame = CFrame.new(c + Vector3.new(0, 0.4, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+		Material = Enum.Material.Cobblestone,
+		Color = Color3.fromRGB(95, 88, 80),
+	}, decor)
+	-- Anel interno marcando a zona (metal enferrujado)
+	part({
+		Name = "ZoneRim",
+		Shape = Enum.PartType.Cylinder,
+		Size = Vector3.new(0.5, Pvp.ZoneRadius * 2 + 2, Pvp.ZoneRadius * 2 + 2),
+		CFrame = CFrame.new(c + Vector3.new(0, 1.2, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+		Material = Enum.Material.CorrodedMetal,
+		Color = Color3.fromRGB(110, 75, 50),
+		CanCollide = false,
+	}, decor)
+	local posts = 12
+	for i = 1, posts do
+		local angle = (i / posts) * math.pi * 2
+		local at = c + Vector3.new(math.cos(angle), 0, math.sin(angle)) * (Pvp.ArenaRadius - 3)
+		part({
+			Name = "Post",
+			Size = Vector3.new(1.2, 10, 1.2),
+			CFrame = CFrame.new(at + Vector3.new(0, 6, 0)),
+			Material = Enum.Material.WoodPlanks,
+			Color = Color3.fromRGB(95, 68, 45),
+		}, decor)
+		local lantern = part({
+			Name = "Lantern",
+			Size = Vector3.new(1.4, 1.6, 1.4),
+			CFrame = CFrame.new(at + Vector3.new(0, 11.6, 0)),
+			Material = Enum.Material.Neon,
+			Color = Color3.fromRGB(255, 170, 70),
+			CanCollide = false,
+		}, decor)
+		local light = Instance.new("PointLight")
+		light.Color = Color3.fromRGB(255, 170, 90)
+		light.Range = 18
+		light.Brightness = 1.4
+		light.Parent = lantern
+		-- Barricadas de sucata entre os postes (cobertura no combate)
+		if i % 2 == 0 then
+			local mid = (i + 0.5) / posts * math.pi * 2
+			local spot = c + Vector3.new(math.cos(mid), 0, math.sin(mid)) * (Pvp.ArenaRadius * 0.55)
+			part({
+				Name = "Barricade",
+				Size = Vector3.new(7, 3.2, 1.2),
+				CFrame = CFrame.lookAt(spot + Vector3.new(0, 2.8, 0), Vector3.new(c.X, 2.8, c.Z)),
+				Material = Enum.Material.CorrodedMetal,
+				Color = Color3.fromRGB(105, 80, 60),
+			}, decor)
+			part({
+				Name = "Crate",
+				Size = Vector3.new(2.4, 2.4, 2.4),
+				CFrame = CFrame.lookAt(spot + Vector3.new(4.5, 2.4, 0), Vector3.new(c.X, 2.4, c.Z)),
+				Material = Enum.Material.WoodPlanks,
+				Color = Color3.fromRGB(120, 85, 55),
+			}, decor)
+		end
+	end
+
 	-- Barreira: anel de paredes de energia que bloqueia o centro fora do horário do PvP.
 	local barrierFolder = Instance.new("Folder")
 	barrierFolder.Name = "Barrier"
@@ -203,6 +271,59 @@ local function resetCapture()
 	ui("Contested", false)
 end
 
+--------------------------------------------------------------------------------
+-- Escolta: robôs acompanham o dono na arena
+--------------------------------------------------------------------------------
+
+local function pvpDamage(weaponDamage: number, tier: number): number
+	return weaponDamage * Rarity.Multiplier(tier) ^ 0.75 * Pvp.DamageFactor
+end
+
+-- Inimigos de `player` na arena: jogadores não aliados e os robôs da escolta deles.
+local function enemiesOf(player: Player): { any }
+	local list = {}
+	for _, other in Players:GetPlayers() do
+		if other ~= player and not SocialService.IsAllied(player, other) then
+			local root, humanoid = rootOf(other)
+			if root and humanoid and inRadius(root.Position, Pvp.ArenaRadius + 2) then
+				table.insert(
+					list,
+					{ Position = root.Position, Dead = false, StunnedUntil = 0, Humanoid = humanoid }
+				)
+			end
+			for _, target in RobotService.EscortTargets(other) do
+				table.insert(list, target)
+			end
+		end
+	end
+	return list
+end
+
+local function stepEscorts(dt: number)
+	local now = os.clock()
+	for _, player in Players:GetPlayers() do
+		local root = rootOf(player)
+		local inside = phase == "Open" and root ~= nil and inRadius(root.Position, Pvp.ArenaRadius + 2)
+		if inside and not RobotService.IsEscorting(player) then
+			RobotService.BeginEscort(player, (root :: BasePart).Position)
+		elseif not inside and RobotService.IsEscorting(player) then
+			RobotService.EndEscort(player)
+		end
+		if inside and root then
+			RobotService.StepPvp(player, root.Position, enemiesOf(player), now, dt, function(target, robot)
+				local weapon = robot.Weapon
+				if target.Humanoid and weapon then
+					target.Humanoid:TakeDamage(
+						pvpDamage(weapon.Damage, robot.WeaponTier) * Pvp.RobotDamageFactor
+					)
+				elseif target.Robot then
+					RobotService.Damage(target.Owner, target.Robot, robot.Damage * Pvp.RobotVsRobotFactor)
+				end
+			end)
+		end
+	end
+end
+
 local function openArena()
 	phase = "Open"
 	phaseEnds = os.clock() + Pvp.OpenSeconds
@@ -216,6 +337,9 @@ local function closeArena()
 	phase = "Hordes"
 	phaseEnds = os.clock() + Pvp.HordeSeconds
 	resetCapture()
+	for _, player in Players:GetPlayers() do
+		RobotService.EndEscort(player)
+	end
 	-- Quem ainda está na arena volta para casa antes de a barreira fechar.
 	for _, player in Players:GetPlayers() do
 		if PvpService.InArena(player) then
@@ -321,27 +445,18 @@ function PvpService.PlayerAttack(
 	if phase ~= "Open" or not inRadius(origin, Pvp.ArenaRadius + 2) then
 		return 0
 	end
-	local targets: { any } = {}
-	local byTarget: { [any]: Humanoid } = {}
-	for _, other in Players:GetPlayers() do
-		if other ~= attacker and not SocialService.IsAllied(attacker, other) then
-			local root, humanoid = rootOf(other)
-			if root and humanoid and inRadius(root.Position, Pvp.ArenaRadius + 2) then
-				local target = { Position = root.Position, Dead = false, StunnedUntil = 0 }
-				table.insert(targets, target)
-				byTarget[target] = humanoid
-			end
-		end
-	end
+	local targets = enemiesOf(attacker)
 	if #targets == 0 then
 		return 0
 	end
-	local damage = weapon.Damage * Rarity.Multiplier(tier) ^ 0.75 * Pvp.DamageFactor
+	local damage = pvpDamage(weapon.Damage, tier)
 	local hits = Combat.Resolve(weapon, origin, dir, targets :: any, nil)
 	for _, target in hits do
-		local humanoid = byTarget[target]
-		if humanoid then
-			humanoid:TakeDamage(damage)
+		if target.Humanoid then
+			target.Humanoid:TakeDamage(damage)
+		elseif target.Robot then
+			-- Contra robôs o avatar usa o dano normal da arma (robôs têm muito mais vida que jogadores).
+			RobotService.Damage(target.Owner, target.Robot, weapon.Damage * Rarity.Multiplier(tier) * 0.8)
 		end
 	end
 	return #hits
@@ -446,6 +561,16 @@ function PvpService.Start()
 	end
 
 	DataService.OnLoaded(watchDeaths)
+
+	RunService.Heartbeat:Connect(function(dt)
+		if phase ~= "Open" then
+			return
+		end
+		local ok, err = pcall(stepEscorts, dt)
+		if not ok then
+			warn("[PvpService] escolta:", err)
+		end
+	end)
 
 	local accumulated = 0
 	RunService.Heartbeat:Connect(function(dt)

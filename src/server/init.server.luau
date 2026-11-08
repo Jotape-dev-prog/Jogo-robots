@@ -44,6 +44,7 @@ if game:GetService("RunService"):IsStudio() then
 end
 
 RemoteGuard.Start() -- cria os RemoteFunctions já com os handlers registrados
+require(script.Fx).Start() -- RemoteEvent dos efeitos visuais de combate
 DataService.Start() -- por último: começa a carregar perfis
 
 print("[Server] Robôs vs. Zumbis iniciado")

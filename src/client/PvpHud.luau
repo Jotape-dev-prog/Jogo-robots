@@ -40,7 +40,7 @@ local function refresh()
 	if pvp.Phase ~= lastPhase then
 		if lastPhase ~= "" and open then
 			Ui.Toast("⚔ O centro abriu! Hordas pausadas — domine a zona por 30 s", T.Accent)
-			Sound.Play("Defeat")
+			Sound.Play("PvpAlert")
 		end
 		lastPhase = pvp.Phase
 	end

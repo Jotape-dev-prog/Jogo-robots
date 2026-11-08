@@ -113,6 +113,9 @@ function Ui.Label(parent: Instance, text: string, size: UDim2?, props: { [string
 	return l
 end
 
+-- Chamado em todo clique de botão (o SoundController liga o som de clique aqui).
+Ui.ClickHook = nil :: (() -> ())?
+
 function Ui.Button(
 	parent: Instance,
 	text: string,
@@ -145,7 +148,13 @@ function Ui.Button(
 		b.TextColor3 = T.TextDim
 		b.AutoButtonColor = false
 	else
-		b.Activated:Connect(onClick)
+		b.Activated:Connect(function()
+			local hook = Ui.ClickHook
+			if hook then
+				hook()
+			end
+			onClick()
+		end)
 	end
 	b.Parent = parent
 	return b

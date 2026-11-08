@@ -237,6 +237,22 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 			light.Range = 10
 			light.Brightness = 1.5
 			light.Parent = core
+			-- Primordial e Galáctico (8+): faíscas da cor da raridade.
+			if best >= 8 then
+				local sparkle = Instance.new("ParticleEmitter")
+				sparkle.Color = ColorSequence.new(Rarity.Get(best).Color)
+				sparkle.LightEmission = 1
+				sparkle.Size = NumberSequence.new({
+					NumberSequenceKeypoint.new(0, 0.25),
+					NumberSequenceKeypoint.new(1, 0),
+				})
+				sparkle.Transparency = NumberSequence.new(0.2)
+				sparkle.Lifetime = NumberRange.new(0.6, 1.1)
+				sparkle.Rate = if best >= 9 then 14 else 8
+				sparkle.Speed = NumberRange.new(1, 2.5)
+				sparkle.SpreadAngle = Vector2.new(180, 180)
+				sparkle.Parent = core
+			end
 		end
 	end
 

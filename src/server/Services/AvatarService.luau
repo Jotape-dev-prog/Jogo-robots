@@ -12,6 +12,7 @@ local DataService = require(script.Parent.DataService)
 local Models = require(script.Parent.Parent.Models)
 local RemoteGuard = require(script.Parent.RemoteGuard)
 local HordeService = require(script.Parent.HordeService)
+local Fx = require(script.Parent.Parent.Fx)
 local PvpService = require(script.Parent.PvpService)
 
 -- Avatar bate um pouco mais fraco que o robô, mas pode se mover.
@@ -100,6 +101,7 @@ local function handleAttack(player: Player, aim: any): RemoteGuard.Result
 	local damage = weapon.Damage * Rarity.Multiplier(tier) * AVATAR_DAMAGE_FACTOR
 	local hits, kills = HordeService.PlayerAttack(player, weapon, root.Position, dir, damage)
 	local playerHits = PvpService.PlayerAttack(player, weapon, tier, root.Position, dir)
+	Fx.Attack(weapon, root.Position, dir, {}, player.UserId) -- os outros jogadores veem o golpe
 	return {
 		Ok = true,
 		Hits = hits + playerHits,

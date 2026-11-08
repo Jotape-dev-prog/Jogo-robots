@@ -56,15 +56,16 @@ Economy.Factory = {
 	Floors = 3,
 	LinesPerFloor = 2,
 	LineBaseCost = 500,
-	LineCostGrowth = 4, -- linha n custa Base × Growth^(n-1)
-	FloorMultiplier = { 1, 3, 9 },
+	LineCostGrowth = 3, -- linha n custa Base × Growth^(n-1) (Beta: era 4; o 3º andar levava horas para se pagar)
+	FloorMultiplier = { 1, 4, 16 }, -- Beta: era {1, 3, 9}
 	BaseIncomePerSecond = 2, -- linha sem trabalhador
 	-- peso de cada peça do trabalhador: renda × Multiplier(tier)^peso
 	WorkerWeights = {
-		Torso = 0.5, -- capacidade de carga
-		Arms = 0.35, -- velocidade de montagem
-		Legs = 0.25, -- velocidade de locomoção
-		Head = 0.15, -- eficiência de navegação
+		-- Beta: pesos menores (soma 0,8; era 1,25) para a fábrica não superar as hordas cedo demais
+		Torso = 0.3, -- capacidade de carga
+		Arms = 0.25, -- velocidade de montagem
+		Legs = 0.15, -- velocidade de locomoção
+		Head = 0.1, -- eficiência de navegação
 	},
 }
 

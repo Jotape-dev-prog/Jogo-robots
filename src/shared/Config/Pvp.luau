@@ -16,6 +16,8 @@ Pvp.WinBonus = 1.15 -- +15% dinheiro e sorte para quem captura
 Pvp.WinBonusSeconds = 20 * 60 -- até a próxima janela de PvP
 Pvp.DeathCashLossPercent = 0.05
 Pvp.RespawnSeconds = 5
+Pvp.RobotDamageFactor = 0.5 -- robô da escolta bate em jogadores com metade do dano do avatar
+Pvp.RobotVsRobotFactor = 0.5 -- dano entre robôs na arena (fração do dano normal do robô)
 Pvp.DamageFactor = 1.6 -- dano no PvP = dano base × tier^0.75 × fator (HP do avatar escala igual)
 
 Pvp.TradeMinWave = 20 -- trocas liberadas após a horda 20

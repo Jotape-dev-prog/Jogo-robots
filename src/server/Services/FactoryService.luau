@@ -58,6 +58,8 @@ local function nextLockedLine(player: Player): string?
 	return nil
 end
 
+local MACHINE_SOUND = "rbxassetid://9112839293" -- Pro Sound Effects: refinaria/máquinas em loop
+
 local function tierColor(key: string): Color3
 	local item = Items.Parse(key)
 	return if item then Rarity.Get(item.Tier).Color else Color3.fromRGB(70, 70, 70)
@@ -73,6 +75,25 @@ local function refreshVisuals(player: Player)
 		local line = data.Factory.Lines[id]
 		station.Transparency = if line.Unlocked then 0 else 0.75
 		station.Color = if line.Unlocked then Color3.fromRGB(60, 120, 70) else Color3.fromRGB(90, 90, 90)
+
+		-- Som mecânico 3D: mais alto e mais acelerado em andares de cima.
+		local hum = station:FindFirstChild("MachineHum") :: Sound?
+		if line.Unlocked and not hum then
+			local floor = tonumber(string.match(id, "^(%d+)")) or 1
+			local s = Instance.new("Sound")
+			s.Name = "MachineHum"
+			s.SoundId = MACHINE_SOUND
+			s.Looped = true
+			s.Volume = 0.15 + 0.1 * floor
+			s.PlaybackSpeed = 0.85 + 0.12 * floor
+			s.RollOffMode = Enum.RollOffMode.InverseTapered
+			s.RollOffMinDistance = 6
+			s.RollOffMaxDistance = 45
+			s.Parent = station
+			s:Play()
+		elseif not line.Unlocked and hum then
+			hum:Destroy()
+		end
 
 		local old = b.Workers[id]
 		if old then
