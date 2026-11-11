@@ -11,6 +11,7 @@ local PvpHud = require(script.PvpHud)
 local TutorialController = require(script.TutorialController)
 local MusicController = require(script.MusicController)
 local FxController = require(script.FxController)
+local AmbientController = require(script.AmbientController)
 
 local Windows = script.Windows
 local Roll = require(Windows.Roll)
@@ -43,6 +44,7 @@ PvpHud.Build()
 TutorialController.Start()
 MusicController.Start()
 FxController.Start()
+AmbientController.Start()
 
 -- Painéis da base (máquina da roleta, bancada da forja) abrem a janela correspondente.
 game:GetService("ProximityPromptService").PromptTriggered:Connect(function(prompt)

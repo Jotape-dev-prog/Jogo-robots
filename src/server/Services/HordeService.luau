@@ -27,6 +27,7 @@ local DataService = require(script.Parent.DataService)
 local BaseService = require(script.Parent.BaseService)
 local RobotService = require(script.Parent.RobotService)
 local RemoteGuard = require(script.Parent.RemoteGuard)
+local Fx = require(script.Parent.Parent.Fx)
 
 type Zombie = Types.Zombie
 type State = "Intermission" | "Active" | "Defeated" | "Paused"
@@ -108,6 +109,7 @@ local function removeZombie(run: Run, index: number, killed: boolean?)
 	local z = run.Zombies[index]
 	z.Dead = true
 	if killed then
+		Fx.Event("k", z.Position, z.Part.Size.Y / 5)
 		-- Morte: tomba para trás e some (o corpo não bloqueia mais nada).
 		local part = z.Part
 		part.CFrame = part.CFrame * CFrame.new(0, -part.Size.Y * 0.6, 0) * CFrame.Angles(math.rad(-80), 0, 0)
@@ -418,6 +420,7 @@ local function stepRun(run: Run, dt: number, now: number)
 		end
 
 		if invaded then
+			Fx.Event("i", base.Core, 1, run.Player.UserId)
 			removeZombie(run, i)
 			run.Invasions += 1
 			ui(run, "Invasions", run.Invasions)

@@ -76,6 +76,10 @@ local function buildArena(): Model
 		CFrame.new(Pvp.Center),
 		Vector3.new(Pvp.ArenaRadius * 2 + 8, 80, Pvp.ArenaRadius * 2 + 8)
 	)
+	MapService.ClearGround(
+		CFrame.new(Pvp.Center),
+		Vector3.new(Pvp.ArenaRadius * 2 + 8, 4, Pvp.ArenaRadius * 2 + 8)
+	)
 	local existing = workspace:FindFirstChild("Arena")
 	if existing and existing:IsA("Model") then
 		return existing

@@ -333,6 +333,7 @@ function RobotService.Damage(player: Player, robot: Robot, amount: number)
 	robot.Hp = math.max(0, robot.Hp - amount)
 	if robot.Hp <= 0 then
 		robot.Broken = true
+		Fx.Event("b", robot.Position, 1, player.UserId)
 		RobotService.SaveHp(player) -- grava na hora: sair do jogo não conserta
 	end
 	notify(player, robot)

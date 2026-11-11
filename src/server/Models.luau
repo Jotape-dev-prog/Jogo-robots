@@ -26,6 +26,40 @@ end
 
 local RUST = Color3.fromRGB(120, 72, 40)
 
+-- Modelos 3D (MeshParts gerados) guardados no place em ServerStorage.Assets.
+-- Convenção: frente para -Z, sem rotação, já no tamanho de referência. Se um modelo faltar,
+-- o código volta para as formas feitas de blocos (o jogo nunca quebra por falta de asset).
+local assetsFolder: Instance? = game:GetService("ServerStorage"):FindFirstChild("Assets")
+local BAND_NAMES = { "Scrap", "Industrial", "Future" }
+
+local function asset(name: string): MeshPart?
+	local found = if assetsFolder then assetsFolder:FindFirstChild(name) else nil
+	if found and found:IsA("MeshPart") then
+		return found
+	end
+	return nil
+end
+
+-- Clona um modelo 3D no tamanho e na posição pedidos.
+local function meshPart(
+	parent: Instance,
+	name: string,
+	template: MeshPart,
+	size: Vector3,
+	cframe: CFrame
+): MeshPart
+	local p = template:Clone()
+	p.Name = name
+	p.Anchored = true
+	p.CanCollide = false
+	p.CanQuery = false
+	p.CanTouch = false
+	p.Size = size
+	p.CFrame = cframe
+	p.Parent = parent
+	return p
+end
+
 local function block(
 	parent: Instance,
 	name: string,
@@ -83,6 +117,26 @@ function Models.Weapon(parent: Instance, key: string, grip: CFrame, scale: numbe
 	local trimColor = Rarity.Get(item.Tier).Color
 	local m = Instance.new("Model")
 	m.Name = "Weapon"
+	local template = asset(`Weapon_{item.Type}`)
+	if template then
+		-- Modelo 3D: comprimento ao longo de -Z; a empunhadura fica perto da ponta de trás.
+		local size = template.Size * s
+		local back = if item.Type == "Rifle" then 0.3 elseif item.Type == "Hammer" then 0.3 else 0.4
+		meshPart(m, "Mesh", template, size, grip * CFrame.new(0, 0, -size.Z * back))
+		-- Faixa brilhante na cor da raridade (é o que diferencia os tiers à distância).
+		if item.Tier >= 4 then
+			block(
+				m,
+				"RarityGlow",
+				Vector3.new(0.12, 0.12, size.Z * 0.6),
+				grip * CFrame.new(0, size.Y * 0.35, -size.Z * 0.5),
+				trimColor,
+				Enum.Material.Neon
+			)
+		end
+		m.Parent = parent
+		return m
+	end
 	if item.Type == "Sword" then
 		block(m, "Handle", Vector3.new(0.3, 0.3, 1) * s, grip, Color3.fromRGB(60, 45, 35), Enum.Material.Wood)
 		block(
@@ -172,9 +226,97 @@ end
 -- Robô completo a partir das peças equipadas. `base` = chão sob o robô, olhando para os zumbis.
 -- A peça "Root" (invisível, ancorada) é o PrimaryPart: mover ela move o robô inteiro.
 function Models.Robot(pad: { [string]: string }, base: CFrame): Model
+	local originalPad = pad
 	local m = Instance.new("Model")
 	m.Name = "Robot"
 	local up = base * CFrame.new(0, 0.2, 0)
+
+	-- Modelos 3D por faixa (sucata / industrial / futurista). Cada peça foi gerada como parte de um
+	-- robô inteiro e guarda a posição que tinha no corpo (atributo Offset, com os pés na origem),
+	-- então qualquer combinação de faixas encaixa: cabeça futurista + pernas de sucata etc.
+	local SLOT_PARTS = {
+		Head = { "Head" },
+		Torso = { "Torso" },
+		Arms = { "ArmL", "ArmR" },
+		Legs = { "LegL", "LegR" },
+	}
+	local function templatesFor(slot: string, key: string): { MeshPart }?
+		if key == "" then
+			return nil
+		end
+		local list = {}
+		for _, partName in SLOT_PARTS[slot] do
+			local t = asset(`Robot_{BAND_NAMES[bandOf(key)]}_{partName}`)
+			if not t then
+				return nil
+			end
+			table.insert(list, t)
+		end
+		return list
+	end
+	local hand = Vector3.new(1.95, 2.6, -0.6) -- onde a arma fica (mão direita)
+	local usable = true
+	local chosen: { [string]: { MeshPart } } = {}
+	for slot in SLOT_PARTS do
+		local key = (pad :: any)[slot]
+		if key ~= "" then
+			local list = templatesFor(slot, key)
+			if list then
+				chosen[slot] = list
+			else
+				usable = false
+			end
+		end
+	end
+	if usable and next(chosen) then
+		for slot, list in chosen do
+			for _, template in list do
+				local offset = template:GetAttribute("Offset")
+				local at = if typeof(offset) == "Vector3" then offset else Vector3.zero
+				meshPart(
+					m,
+					string.match(template.Name, "_(%w+)$") or slot,
+					template,
+					template.Size,
+					up * CFrame.new(at)
+				)
+			end
+			if slot == "Arms" then
+				local right = list[2]
+				local o = right:GetAttribute("Offset")
+				if typeof(o) == "Vector3" then
+					hand = Vector3.new(o.X + 0.15, o.Y - right.Size.Y * 0.38, -0.6)
+				end
+			end
+			-- Luz na cor da raridade de cada peça (diferencia tiers dentro da mesma faixa).
+			local first = list[1]
+			local offset = first:GetAttribute("Offset")
+			local at = if typeof(offset) == "Vector3" then offset else Vector3.zero
+			local color = Rarity.Get(tierOf((pad :: any)[slot]) or 1).Color
+			if slot == "Torso" then
+				block(
+					m,
+					"Core",
+					Vector3.new(0.55, 0.55, 0.1),
+					up * CFrame.new(at + Vector3.new(0, 0.15, -first.Size.Z / 2 - 0.02)),
+					color,
+					Enum.Material.Neon
+				)
+			elseif slot == "Head" then
+				block(
+					m,
+					"Eye",
+					Vector3.new(0.8, 0.16, 0.08),
+					up * CFrame.new(at + Vector3.new(0, 0, -first.Size.Z / 2 - 0.02)),
+					color,
+					Enum.Material.Neon
+				)
+			end
+		end
+		pad = table.clone(pad)
+		pad.Legs, pad.Torso, pad.Arms, pad.Head = "", "", "", "" -- não monta as formas de bloco
+		m:SetAttribute("UsesMeshes", true)
+	end
 
 	if pad.Legs ~= "" then
 		local c, st = paint(pad.Legs)
@@ -437,12 +579,12 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 	end
 
 	if pad.Weapon ~= "" then
-		Models.Weapon(m, pad.Weapon, up * CFrame.new(1.95, 2.6, -0.6), 1.1)
+		Models.Weapon(m, pad.Weapon, up * CFrame.new(hand), 1.1)
 	end
 
 	-- Brilho nos tiers futuristas (7+).
 	local best = 0
-	for _, key in pad do
+	for _, key in originalPad do
 		best = math.max(best, tierOf(key) or 0)
 	end
 	if best >= 7 then
@@ -498,6 +640,20 @@ local ZOMBIE_COLORS = {
 
 -- Zumbi: um corpo ancorado (movido pelo servidor) + partes soldadas que seguem junto.
 function Models.Zombie(kind: string, size: Vector3, cframe: CFrame): BasePart
+	local template = asset(`Zombie_{kind}`)
+	if template then
+		local root = template:Clone()
+		root.Name = kind
+		root.Anchored = true
+		root.CanCollide = false
+		root.CanQuery = false
+		root.CanTouch = false
+		-- Escala uniforme pela altura (não deforma o modelo); a base continua no chão.
+		local s = size.Y / template.Size.Y
+		root.Size = template.Size * s
+		root.CFrame = cframe
+		return root
+	end
 	local colors = ZOMBIE_COLORS[kind] or ZOMBIE_COLORS.Normal
 	local root = block(
 		workspace,

@@ -34,6 +34,32 @@ local function part(props: { [string]: any }, parent: Instance): Part
 	return p
 end
 
+-- Terreno sem grama (terra batida) debaixo de construções: a grama animada do terreno
+-- atravessaria o chão das bases, os caminhos e a arena.
+function MapService.ClearGround(cframe: CFrame, size: Vector3)
+	-- Troca só o MATERIAL (grama → terra) na caixa alinhada que cobre a área; a altura do
+	-- terreno não muda (preencher de novo faria a terra subir e cobrir o chão das bases).
+	local half = Vector3.new(size.X / 2, 0, size.Z / 2)
+	local minV = Vector3.new(math.huge, -8, math.huge)
+	local maxV = Vector3.new(-math.huge, 4, -math.huge)
+	for _, corner in
+		{
+			Vector3.new(-half.X, 0, -half.Z),
+			Vector3.new(half.X, 0, -half.Z),
+			Vector3.new(-half.X, 0, half.Z),
+			Vector3.new(half.X, 0, half.Z),
+		}
+	do
+		local world = cframe:PointToWorldSpace(corner)
+		minV = Vector3.new(math.min(minV.X, world.X), minV.Y, math.min(minV.Z, world.Z))
+		maxV = Vector3.new(math.max(maxV.X, world.X), maxV.Y, math.max(maxV.Z, world.Z))
+	end
+	local region = Region3.new(minV, maxV):ExpandToGrid(4)
+	local terrain = workspace.Terrain
+	terrain:ReplaceMaterial(region, 4, Enum.Material.Grass, Enum.Material.Ground)
+	terrain:ReplaceMaterial(region, 4, Enum.Material.LeafyGrass, Enum.Material.Ground)
+end
+
 -- Guarda (fora do mundo) a vegetação que encosta na caixa.
 function MapService.ClearVegetation(cframe: CFrame, size: Vector3)
 	if not stash then
@@ -184,6 +210,23 @@ local function grassTuft(parent: Instance, at: Vector3)
 	end
 end
 
+-- Modelos 3D de cenário (ServerStorage.Assets.Prop_*), apoiados no chão com giro aleatório.
+local assets = ServerStorage:FindFirstChild("Assets")
+
+local function prop(parent: Instance, name: string, at: Vector3, yaw: number?): MeshPart?
+	local template = if assets then assets:FindFirstChild(name) else nil
+	if not template or not template:IsA("MeshPart") then
+		return nil
+	end
+	local p = template:Clone()
+	p.Anchored = true
+	p.CanCollide = true
+	p.CFrame = CFrame.new(at.X, p.Size.Y / 2, at.Z)
+		* CFrame.Angles(0, yaw or rng:NextNumber(0, math.pi * 2), 0)
+	p.Parent = parent
+	return p
+end
+
 -- Props ao longo das cercas da base (fora do grid e da linha dos zumbis).
 local function decorateBase(base: BaseService.Base, container: Instance)
 	local model = Instance.new("Model")
@@ -203,6 +246,16 @@ local function decorateBase(base: BaseService.Base, container: Instance)
 			end
 		end
 	end
+	-- Modelos 3D grandes do lado de fora: torre de vigia na entrada, sucata e carro velho
+	local function outside(x: number, z: number): Vector3
+		return (frame * CFrame.new(x, 0, z)).Position
+	end
+	local yawBase = math.atan2(-frame.LookVector.X, -frame.LookVector.Z)
+	prop(model, "Prop_Tower", outside(-40, 120), yawBase)
+	prop(model, "Prop_Scrap", outside(40, 70))
+	prop(model, "Prop_Scrap", outside(-40, 25))
+	prop(model, "Prop_Car", outside(28, -40), yawBase + 0.4)
+
 	-- Mato do lado de fora das cercas
 	for _ = 1, 16 do
 		local side = if rng:NextNumber() < 0.5 then -1 else 1
@@ -228,6 +281,11 @@ local function buildPath(base: BaseService.Base, container: Instance)
 	model.Name = `Path{base.Index}`
 
 	MapService.ClearVegetation(frame, Vector3.new(PATH_WIDTH + 14, 60, length + 10))
+	-- Terra batida debaixo da estrada em pedaços pequenos (um retângulo alinhado gigante cobriria
+	-- uma fatia enorme de grama nos caminhos diagonais).
+	for z = -length / 2, length / 2, 10 do
+		MapService.ClearGround(frame * CFrame.new(0, 0, z), Vector3.new(PATH_WIDTH, 4, 10))
+	end
 
 	-- Estrada de terra batida com bordas de pedra
 	part({
@@ -287,6 +345,15 @@ local function buildPath(base: BaseService.Base, container: Instance)
 		+ Vector3.new(0, 4.2, 0)
 	sign(model, CFrame.lookAt(signAt, signAt - toCenter), "⚔ ARENA PvP\n(opcional)")
 
+	-- Modelos 3D na beira do caminho, alternando os lados
+	local count = math.floor(length / 60)
+	for i = 1, count do
+		local side = if i % 2 == 0 then 1 else -1
+		local z = -length / 2 + i * (length / (count + 1))
+		local at = (frame * CFrame.new(side * (PATH_WIDTH / 2 + 12), -ROAD_TOP, z)).Position
+		prop(model, if i % 3 == 0 then "Prop_Car" else "Prop_Scrap", at)
+	end
+
 	-- Mato e sucata na beira do caminho
 	for _ = 1, math.floor(length / 10) do
 		local side = if rng:NextNumber() < 0.5 then -1 else 1
@@ -345,6 +412,9 @@ function MapService.Start()
 		-- Vegetação em cima do chão da base sai do caminho.
 		-- (inclui a fábrica, que fica a 21..43 studs do núcleo em direção ao centro)
 		MapService.ClearVegetation(base.Frame * CFrame.new(0, 0, 45), Vector3.new(70, 60, 195))
+		for z = -50, 140, 10 do
+			MapService.ClearGround(base.Frame * CFrame.new(0, 0, z), Vector3.new(64, 4, 10))
+		end
 		if not container:FindFirstChild(`Path{base.Index}`) then
 			buildPath(base, container)
 			decorateBase(base, container)

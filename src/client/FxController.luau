@@ -81,7 +81,99 @@ local function stunMark(position: Vector3, seconds: number)
 	end)
 end
 
+-- Nuvem de poeira/fumaça (partes neon desbotando para cima).
+local function puff(position: Vector3, color: Color3, count: number, spread: number, rise: number)
+	for _ = 1, count do
+		local offset = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5) * spread
+		local size = 0.6 + math.random() * 1.2
+		local p =
+			neon(Vector3.new(size, size, size), CFrame.new(position + offset), color, Enum.PartType.Ball)
+		p.Material = Enum.Material.SmoothPlastic
+		p.Transparency = 0.3
+		fadeOut(p, 0.6 + math.random() * 0.4, {
+			Size = Vector3.new(size, size, size) * 2.2,
+			CFrame = CFrame.new(
+				position + offset * 1.6 + Vector3.new(0, rise * (0.6 + math.random() * 0.6), 0)
+			),
+		})
+	end
+end
+
+local function shake(intensity: number, seconds: number)
+	local camera = Workspace.CurrentCamera
+	if not camera then
+		return
+	end
+	local started = os.clock()
+	local connection
+	connection = game:GetService("RunService").RenderStepped:Connect(function()
+		local t = os.clock() - started
+		if t > seconds then
+			connection:Disconnect()
+			return
+		end
+		local k = intensity * (1 - t / seconds)
+		camera.CFrame = camera.CFrame
+			* CFrame.Angles(math.rad((math.random() - 0.5) * k), math.rad((math.random() - 0.5) * k), 0)
+	end)
+end
+
+-- Explosão de cor (raridade da roleta, rebirth, vitória): anel + faíscas + brilho.
+function FxController.Burst(position: Vector3, color: Color3, scale: number?)
+	local s = scale or 1
+	local ring = neon(
+		Vector3.new(0.3, 2, 2),
+		CFrame.new(position) * CFrame.Angles(0, 0, math.rad(90)),
+		color,
+		Enum.PartType.Cylinder
+	)
+	fadeOut(ring, 0.6, { Size = Vector3.new(0.3, 18 * s, 18 * s) })
+	local ball =
+		neon(Vector3.new(2, 2, 2), CFrame.new(position + Vector3.new(0, 2, 0)), color, Enum.PartType.Ball)
+	fadeOut(ball, 0.45, { Size = Vector3.new(8, 8, 8) * s })
+	sparks(position, color, math.floor(30 * s))
+end
+
+-- Explosão de cor em volta do próprio personagem.
+function FxController.BurstAtPlayer(color: Color3, scale: number?)
+	local character = localPlayer.Character
+	local root = if character then character:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
+	if root and folder then
+		FxController.Burst(root.Position - Vector3.new(0, 2.5, 0), color, scale)
+	end
+end
+
+local function event(entry: any)
+	local position: Vector3 = entry.o
+	if entry.t == "k" then
+		-- Zumbi derrotado: poeira + gosma verde
+		puff(position + Vector3.new(0, 1, 0), Color3.fromRGB(120, 110, 95), 4, 2 * entry.z, 3)
+		sparks(position, Color3.fromRGB(120, 230, 90), 10)
+	elseif entry.t == "i" then
+		-- Núcleo invadido: onda vermelha e tremor para o dono da base
+		local ring = neon(
+			Vector3.new(0.4, 4, 4),
+			CFrame.new(position + Vector3.new(0, 1, 0)) * CFrame.Angles(0, 0, math.rad(90)),
+			Color3.fromRGB(255, 60, 40),
+			Enum.PartType.Cylinder
+		)
+		fadeOut(ring, 0.7, { Size = Vector3.new(0.4, 40, 40) })
+		sparks(position + Vector3.new(0, 4, 0), Color3.fromRGB(255, 90, 40), 25)
+		if entry.u == localPlayer.UserId then
+			shake(1.6, 0.5)
+		end
+	elseif entry.t == "b" then
+		-- Robô quebrado: estouro de faíscas e fumaça escura
+		sparks(position + Vector3.new(0, 2, 0), Color3.fromRGB(255, 160, 60), 25)
+		puff(position + Vector3.new(0, 2.5, 0), Color3.fromRGB(50, 48, 45), 6, 3, 6)
+	end
+end
+
 local function draw(entry: any)
+	if entry.t then
+		event(entry)
+		return
+	end
 	local origin: Vector3 = entry.o
 	local dir: Vector3 = if entry.d.Magnitude > 0.01 then entry.d.Unit else Vector3.zAxis
 	local color = COLORS[entry.p] or COLORS.Cone

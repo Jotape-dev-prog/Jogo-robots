@@ -11,6 +11,7 @@ local Rarity = require(ReplicatedStorage.Shared.Config.Rarity)
 local Ui = require(script.Parent.Parent.Ui)
 local State = require(script.Parent.Parent.State)
 local Sound = require(script.Parent.Parent.SoundController)
+local FxController = require(script.Parent.Parent.FxController)
 
 local T = Ui.Theme
 
@@ -58,6 +59,7 @@ local function doRebirth()
 		return
 	end
 	Sound.Play("Build")
+	FxController.BurstAtPlayer(Color3.fromRGB(255, 200, 80), 2)
 	local best = 1
 	for _, result in r.Results or {} do
 		best = math.max(best, result.Tier)

@@ -39,6 +39,32 @@ local bases: { Base } = {}
 local owners: { [number]: Player } = {}
 local playerBase: { [Player]: Base } = {}
 
+-- Modelos 3D opcionais (ServerStorage.Assets.Prop_*): substituem a forma de blocos quando existem.
+local assetsFolder = game:GetService("ServerStorage"):FindFirstChild("Assets")
+
+local function dressWithMesh(
+	parent: Instance,
+	assetName: string,
+	groundCFrame: CFrame,
+	hide: { BasePart }
+): boolean
+	local template = if assetsFolder then assetsFolder:FindFirstChild(assetName) else nil
+	if not template or not template:IsA("MeshPart") then
+		return false
+	end
+	local mesh = template:Clone()
+	mesh.Name = assetName
+	mesh.Anchored = true
+	mesh.CanCollide = true
+	mesh.CFrame = groundCFrame * CFrame.new(0, mesh.Size.Y / 2, 0)
+	mesh.Parent = parent
+	for _, p in hide do
+		p.Transparency = 1
+		p.CanCollide = false
+	end
+	return true
+end
+
 local function part(props: { [string]: any }, parent: Instance): Part
 	local p = Instance.new("Part")
 	p.Anchored = true
@@ -73,10 +99,11 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		Size = Vector3.new(SPAWN_HALF_WIDTH * 2, 0.4, 6),
 		CFrame = frame * CFrame.new(0, 1.2, 65), -- lado de fora
 		Material = Enum.Material.Neon,
-		Color = Color3.fromRGB(120, 40, 40),
+		Color = Color3.fromRGB(150, 45, 35),
+		Transparency = 0.55, -- discreto: só marca de onde os zumbis saem
 		CanCollide = false,
 	}, model)
-	part({
+	local coreBlock = part({
 		Name = "Core",
 		Size = Vector3.new(12, 8, 6),
 		CFrame = frame * CFrame.new(0, 5, -60), -- lado do centro
@@ -84,7 +111,7 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		Color = Color3.fromRGB(70, 140, 220),
 	}, model)
 	-- Detalhes do núcleo (gerador): anel brilhante e chaminés
-	part({
+	local coreRing = part({
 		Name = "CoreRing",
 		Shape = Enum.PartType.Cylinder,
 		Size = Vector3.new(1, 9, 9),
@@ -93,16 +120,27 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		Color = Color3.fromRGB(90, 200, 255),
 		CanCollide = false,
 	}, model)
+	local coreExtras: { BasePart } = { coreBlock, coreRing }
 	for _, x in { -4, 4 } do
-		part({
-			Name = "Chimney",
-			Shape = Enum.PartType.Cylinder,
-			Size = Vector3.new(6, 1.4, 1.4),
-			CFrame = frame * CFrame.new(x, 12, -61.5) * CFrame.Angles(0, 0, math.rad(90)),
-			Material = Enum.Material.CorrodedMetal,
-			Color = Color3.fromRGB(110, 75, 50),
-		}, model)
+		table.insert(
+			coreExtras,
+			part({
+				Name = "Chimney",
+				Shape = Enum.PartType.Cylinder,
+				Size = Vector3.new(6, 1.4, 1.4),
+				CFrame = frame * CFrame.new(x, 12, -61.5) * CFrame.Angles(0, 0, math.rad(90)),
+				Material = Enum.Material.CorrodedMetal,
+				Color = Color3.fromRGB(110, 75, 50),
+			}, model)
+		)
 	end
+	-- Gerador 3D no lugar do núcleo de blocos (a peça "Core" continua, invisível, como referência).
+	dressWithMesh(
+		model,
+		"Prop_Core",
+		frame * CFrame.new(0, 1, -60) * CFrame.Angles(0, math.rad(180), 0),
+		coreExtras
+	)
 
 	-- Cercas de madeira e metal nas laterais (Cyber-Rustic)
 	for _, x in { -29.5, 29.5 } do
@@ -141,6 +179,13 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 			Color = color,
 			CanCollide = false,
 		}, model)
+		local screen = model:FindFirstChild(name .. "Screen") :: BasePart?
+		local hide: { BasePart } = { body }
+		if screen then
+			table.insert(hide, screen)
+		end
+		local ground = frame * CFrame.new(offset) * CFrame.Angles(0, math.rad(180), 0) -- chão da base (y = 1)
+		dressWithMesh(model, `Prop_{name}`, ground, hide)
 		local prompt = Instance.new("ProximityPrompt")
 		prompt.ObjectText = label
 		prompt.ActionText = "Abrir"

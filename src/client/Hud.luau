@@ -14,7 +14,37 @@ local T = Ui.Theme
 
 local Hud = {}
 
+local TweenService = game:GetService("TweenService")
+
 local labels: { [string]: TextLabel } = {}
+local lastCash: number? = nil
+local gainLayer: Frame? = nil -- camada sem layout por cima do painel (para os "+123")
+local pendingGain = 0
+local gainScheduled = false
+
+-- "+123" subindo do lado do dinheiro (ganhos agrupados a cada 0,4 s).
+local function popGain()
+	gainScheduled = false
+	local amount = pendingGain
+	pendingGain = 0
+	local layer = gainLayer
+	if amount <= 0 or not layer then
+		return
+	end
+	local pop = Ui.Label(layer, `+{Ui.FormatNumber(amount)}`, UDim2.fromOffset(120, 24), {
+		Position = UDim2.fromOffset(130, 8),
+		TextColor3 = Color3.fromRGB(140, 230, 120),
+		Font = T.Font,
+		ZIndex = 4,
+	})
+	TweenService:Create(pop, TweenInfo.new(0.9, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		Position = UDim2.fromOffset(130, -18),
+		TextTransparency = 1,
+	}):Play()
+	task.delay(1, function()
+		pop:Destroy()
+	end)
+end
 local invasionBar: Frame? = nil
 local pauseButton: TextButton? = nil
 
@@ -23,6 +53,14 @@ local function refresh()
 	if data then
 		local income = Economy.FactoryIncome(data.Factory.Lines) * (1 + data.Rebirths * 0.5)
 		labels.Cash.Text = `💰 <b>{Ui.FormatNumber(data.Cash)}</b>`
+		if lastCash and data.Cash > lastCash then
+			pendingGain += data.Cash - lastCash
+			if not gainScheduled then
+				gainScheduled = true
+				task.delay(0.4, popGain)
+			end
+		end
+		lastCash = data.Cash
 		labels.Factory.Text = `🏭 +{Ui.FormatNumber(income)}/s`
 		labels.Weapon.Text = if data.AvatarWeapon ~= ""
 			then `⚔ {Items.DisplayName(data.AvatarWeapon)}`
@@ -70,6 +108,10 @@ function Hud.Build(windows: { [string]: Ui.Window })
 	Ui.Stroke(panel, T.Stroke, 2)
 	Ui.Padding(panel, 10)
 	Ui.ListLayout(panel, false, 4)
+	local layer = Ui.Frame(gui, UDim2.fromOffset(270, 60), T.Background, 1)
+	layer.Position = UDim2.fromOffset(12, 12)
+	layer.ZIndex = 4
+	gainLayer = layer
 	labels.Cash = Ui.Label(panel, "💰 0", UDim2.new(1, 0, 0, 30), { Font = T.Font })
 	labels.Wave = Ui.Label(panel, "🧟 Horda 1")
 	local invRow = Ui.Frame(panel, UDim2.new(1, 0, 0, 18), T.Background, 1)

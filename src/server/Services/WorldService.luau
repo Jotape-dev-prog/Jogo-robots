@@ -7,8 +7,8 @@ local Lighting = game:GetService("Lighting")
 local RunService = game:GetService("RunService")
 
 local DAY_SECONDS = 24 * 60 -- 1 minuto real = 1 hora do jogo
-local NIGHT_AMBIENT = Color3.fromRGB(70, 75, 100)
-local NIGHT_BRIGHTNESS = 1.2
+local NIGHT_AMBIENT = Color3.fromRGB(105, 110, 145) -- noite azulada, mas legível
+local NIGHT_BRIGHTNESS = 1.8
 
 local WorldService = {}
 

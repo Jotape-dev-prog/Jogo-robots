@@ -13,6 +13,7 @@ local Items = require(Shared.Config.Items)
 local Ui = require(script.Parent.Parent.Ui)
 local State = require(script.Parent.Parent.State)
 local Sound = require(script.Parent.Parent.SoundController)
+local FxController = require(script.Parent.Parent.FxController)
 
 local T = Ui.Theme
 
@@ -66,6 +67,11 @@ local function showResults(results: { any }, fused: number)
 	end
 	if fused > 0 then
 		Ui.Toast(`Auto-Fundir: {fused} fusões`, T.Good)
+	end
+	-- Raridade alta: explosão da cor do tier em volta do personagem.
+	local best = results[1]
+	if best and best.Tier >= 4 then
+		FxController.BurstAtPlayer(Rarity.Get(best.Tier).Color, 0.6 + best.Tier * 0.12)
 	end
 end
 

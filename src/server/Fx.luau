@@ -37,6 +37,15 @@ function Fx.Attack(
 	})
 end
 
+-- Eventos pontuais: "k" morte de zumbi, "i" invasão do núcleo, "b" robô quebrado.
+-- u = UserId do dono da base (o cliente dono treme a câmera na invasão).
+function Fx.Event(kind: string, position: Vector3, size: number?, owner: number?)
+	if #queue >= MAX_PER_FRAME then
+		return
+	end
+	table.insert(queue, { t = kind, o = position, z = size or 1, u = owner or 0 })
+end
+
 function Fx.Start()
 	local folder = require(ReplicatedStorage.Shared.Net).Folder()
 	local remote = Instance.new("RemoteEvent")
