@@ -11,6 +11,7 @@ local UserInputService = game:GetService("UserInputService")
 local Net = require(ReplicatedStorage.Shared.Net)
 local Sound = require(script.Parent.SoundController)
 local GridController = require(script.Parent.GridController)
+local AnimationController = require(script.Parent.AnimationController)
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -86,6 +87,7 @@ local function attack()
 	if ok and result and result.Ok then
 		localCooldownUntil = os.clock() + (result.Cooldown or 0.5) * 0.9
 		playEffect(root, dir, result)
+		AnimationController.AvatarAttack(player, result.Pattern)
 		Sound.PlayAttack(result.Pattern, result.Hits)
 	end
 end

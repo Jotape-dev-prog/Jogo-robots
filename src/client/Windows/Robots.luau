@@ -1,5 +1,6 @@
 --!strict
--- Janela do grid: colmeia 4 fileiras × até 7 colunas (A = frente, voltada para os zumbis).
+-- Tela do Estande de Montagem (abre no estande da base): escolher o hexágono, encaixar as peças
+-- do inventário em cada encaixe do robô e posicionar. Colmeia 4 fileiras × até 7 colunas (A = frente, voltada para os zumbis).
 -- Clique num robô para ver/editar; depois clique noutro hexágono para mover ou trocar de lugar.
 -- (Também dá para arrastar os robôs direto no mundo 3D — ver GridController.)
 
@@ -20,6 +21,7 @@ local Robots = {}
 
 local HEX_W, HEX_H = 70, 58
 local selected: string? = nil
+local pickSlot = "Weapon" -- encaixe cujas peças estão sendo mostradas
 local board: Frame
 local details: Frame
 local window: Ui.Window
@@ -32,7 +34,9 @@ local function weaponIcon(key: string): string
 	return if item.Type == "Sword" then "🗡" elseif item.Type == "Hammer" then "🔨" else "🔫"
 end
 
-local function refresh()
+local refresh: () -> ()
+
+function refresh()
 	local data, horde = State.Data, State.Horde
 	if not data then
 		return
@@ -120,7 +124,7 @@ local function refresh()
 	if not cell then
 		Ui.Label(
 			details,
-			"Clique num robô para editar. Depois clique em outro hexágono para mover.",
+			"Clique num hexágono para montar ou editar o robô dele. Com um robô selecionado, clique em outro hexágono para mover.",
 			UDim2.new(1, 0, 0, 40),
 			{
 				TextColor3 = T.TextDim,
@@ -130,58 +134,115 @@ local function refresh()
 			1
 		return
 	end
+	if not Grid.IsUnlocked(cell, columns) then
+		return
+	end
+	-- Hexágono vazio também pode ser montado: escolher a primeira peça cria o robô.
 	local robot = data.Grid[cell]
-	if not robot then
-		Ui.Label(
-			details,
-			`Hexágono {cell} vazio — equipe uma arma nele pelo Inventário.`,
-			UDim2.new(1, 0, 0, 40),
-			{
-				TextColor3 = T.TextDim,
-				TextWrapped = true,
-			}
-		).LayoutOrder =
-			1
-		return
-	end
+		or { Head = "", Torso = "", Arms = "", Legs = "", Weapon = "", Targeting = "Nearest" }
+	local exists = data.Grid[cell] ~= nil
 	local hp = hpByCell[cell]
-	local hpText = if hp then `HP {Ui.FormatNumber(hp.Hp)}/{Ui.FormatNumber(hp.MaxHp)}` else ""
-	local broken = hp and hp.Hp <= 0
+	local hpText = if hp and exists then `HP {Ui.FormatNumber(hp.Hp)}/{Ui.FormatNumber(hp.MaxHp)}` else ""
+	local broken = exists and hp and hp.Hp <= 0
 	local header = Ui.Frame(details, UDim2.new(1, 0, 0, 28), T.Background, 1)
 	header.LayoutOrder = 1
 	Ui.Label(
 		header,
-		`<b>Robô {cell}</b>  {hpText}{if broken
+		`<b>{if exists then "Robô" else "Novo robô em"} {cell}</b>  {hpText}{if broken
 			then "  <font color='#ff6050'>💥 quebrado — volta só após uma derrota</font>"
 			else ""}`,
 		UDim2.new(1, -170, 1, 0)
 	)
-	local targetButton = Ui.Button(header, `🎯 {Common.TargetingNames[robot.Targeting]}`, T.Info, function()
-		State.Call("SetTargeting", cell, Common.TargetingCycle[robot.Targeting])
-	end, UDim2.fromOffset(165, 28))
-	targetButton.Position = UDim2.new(1, -165, 0, 0)
+	if exists then
+		local targetButton = Ui.Button(
+			header,
+			`🎯 {Common.TargetingNames[robot.Targeting]}`,
+			T.Info,
+			function()
+				State.Call("SetTargeting", cell, Common.TargetingCycle[robot.Targeting])
+			end,
+			UDim2.fromOffset(165, 28)
+		)
+		targetButton.Position = UDim2.new(1, -165, 0, 0)
+	end
 
+	-- Encaixes do robô: clique num encaixe para escolher a peça dele.
 	local chips = Ui.Frame(details, UDim2.new(1, 0, 0, 48), T.Background, 1)
 	chips.LayoutOrder = 2
 	Ui.ListLayout(chips, true, 6)
 	for order, slot in Common.SlotOrder do
-		local key = robot[slot]
-		Common.SlotChip(chips, slot, key, function()
-			if key ~= "" then
-				State.Call("Equip", cell, slot, "")
-			end
-		end).LayoutOrder =
-			order
+		local chip = Common.SlotChip(chips, slot, robot[slot], function()
+			pickSlot = slot
+			refresh()
+		end)
+		chip.LayoutOrder = order
+		if slot == pickSlot then
+			Ui.Stroke(chip, Color3.new(1, 1, 1), 3)
+		end
 	end
+
+	-- Peças livres do inventário que servem no encaixe escolhido (melhores primeiro).
+	local current = robot[pickSlot]
 	Ui.Label(
 		details,
-		"Clique numa peça para tirá-la. A vida continua de uma horda para a outra.",
+		`Peças para <b>{Common.SlotNames[pickSlot]}</b> — clique para encaixar:`,
 		UDim2.new(1, 0, 0, 20),
-		{
-			TextColor3 = T.TextDim,
-		}
+		{ TextColor3 = T.Accent }
 	).LayoutOrder =
 		3
+	local picker = Ui.Scroll(details, UDim2.new(1, 0, 0, 66), 6, true)
+	picker.LayoutOrder = 4
+	local order = 0
+	if current ~= "" then
+		Ui.Button(picker, "✖ Tirar", T.Bad, function()
+			State.Call("Equip", cell, pickSlot, "")
+		end, UDim2.fromOffset(84, 56), not broken).LayoutOrder =
+			0
+	end
+	local options = {}
+	for key, count in data.Inventory do
+		local item = Items.Parse(key)
+		if item and item.Slot == pickSlot and key ~= current then
+			local free = count - Common.EquippedCount(data, key)
+			if free > 0 then
+				table.insert(options, { Key = key, Tier = item.Tier, Free = free })
+			end
+		end
+	end
+	table.sort(options, function(a, b)
+		if a.Tier ~= b.Tier then
+			return a.Tier > b.Tier
+		end
+		return a.Key < b.Key
+	end)
+	for _, option in options do
+		order += 1
+		local detail = if pickSlot == "Weapon" then Common.Short(option.Key) else Common.TierName(option.Key)
+		local button = Ui.Button(
+			picker,
+			`{detail}\n<font size="12">x{option.Free}</font>`,
+			Common.TierColor(option.Key),
+			function()
+				local r = State.Call("Equip", cell, pickSlot, option.Key)
+				if r and r.Ok then
+					Sound.Play("Equip")
+				end
+			end,
+			UDim2.fromOffset(104, 56),
+			not broken
+		)
+		button.LayoutOrder = order
+	end
+	if #options == 0 and current == "" then
+		Ui.Label(
+			picker,
+			"Nenhuma peça livre para este encaixe — gire a roleta.",
+			UDim2.fromOffset(420, 40),
+			{
+				TextColor3 = T.TextDim,
+			}
+		)
+	end
 end
 
 function Robots.Select(cell: string?)
@@ -192,7 +253,7 @@ function Robots.Select(cell: string?)
 end
 
 function Robots.Create(): Ui.Window
-	window = Ui.Window("Robots", "🤖 Robôs — Grid de Defesa", Vector2.new(640, 520))
+	window = Ui.Window("Robots", "🔧 Estande de Montagem", Vector2.new(640, 640))
 	board = Ui.Frame(window.Body, UDim2.new(1, 0, 0, 300), T.Background, 1)
 	details = Ui.Frame(window.Body, UDim2.new(1, 0, 1, -306), T.Panel)
 	details.Position = UDim2.fromOffset(0, 306)

@@ -134,6 +134,7 @@ local function refreshVisuals(player: Player)
 				Targeting = "Nearest",
 			}, CFrame.lookAt(ground, facing))
 			m.Name = `Worker_{id}`
+			m:SetAttribute("Worker", true) -- o cliente anima os braços trabalhando
 			m.Parent = b.Model
 			b.Workers[id] = m
 		end

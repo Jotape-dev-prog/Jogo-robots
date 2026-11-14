@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 
 local localPlayer = Players.LocalPlayer
 local Sound = require(script.Parent.SoundController)
+local AnimationController = require(script.Parent.AnimationController)
 
 local MAX_DISTANCE = 160
 local MAX_PER_BATCH = 25
@@ -178,6 +179,16 @@ local function draw(entry: any)
 	local dir: Vector3 = if entry.d.Magnitude > 0.01 then entry.d.Unit else Vector3.zAxis
 	local color = COLORS[entry.p] or COLORS.Cone
 	local own = entry.u == localPlayer.UserId -- o próprio golpe já foi desenhado na hora pelo CombatController
+
+	-- Animação do golpe: robô que está na origem, ou o avatar de outro jogador.
+	if entry.u == 0 then
+		AnimationController.RobotAttack(origin, entry.p)
+	elseif not own then
+		local attacker = Players:GetPlayerByUserId(entry.u)
+		if attacker then
+			AnimationController.AvatarAttack(attacker, entry.p)
+		end
+	end
 
 	if not own then
 		-- Som 3D do golpe (robôs e outros jogadores), no lugar de onde ele saiu.

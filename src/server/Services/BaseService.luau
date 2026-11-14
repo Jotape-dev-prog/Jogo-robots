@@ -204,6 +204,96 @@ local function buildPlaceholder(index: number, parent: Instance): Model
 		"Inventory"
 	)
 
+	-- Estande de Montagem: é aqui que o jogador monta os robôs (abre a tela de montagem).
+	do
+		local at = frame * CFrame.new(0, 1, -36)
+		local blocks: { BasePart } = {}
+		local function add(props: { [string]: any })
+			table.insert(blocks, part(props, model))
+		end
+		add({
+			Name = "StandPlatform",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.6, 9, 9),
+			CFrame = at * CFrame.new(0, 0.3, 0) * CFrame.Angles(0, 0, math.rad(90)),
+			Material = Enum.Material.DiamondPlate,
+			Color = Color3.fromRGB(80, 78, 76),
+		})
+		add({
+			Name = "StandRing",
+			Shape = Enum.PartType.Cylinder,
+			Size = Vector3.new(0.2, 6, 6),
+			CFrame = at * CFrame.new(0, 0.62, 0) * CFrame.Angles(0, 0, math.rad(90)),
+			Material = Enum.Material.Neon,
+			Color = Color3.fromRGB(90, 230, 130),
+			CanCollide = false,
+		})
+		for _, side in { -1, 1 } do
+			add({
+				Name = "StandPillar",
+				Size = Vector3.new(0.8, 9, 0.8),
+				CFrame = at * CFrame.new(side * 4, 4.5, 0),
+				Material = Enum.Material.CorrodedMetal,
+				Color = Color3.fromRGB(110, 80, 58),
+			})
+			add({
+				Name = "StandArm",
+				Size = Vector3.new(0.5, 0.5, 3),
+				CFrame = at
+					* CFrame.new(side * 2.6, 7.2, 0)
+					* CFrame.Angles(0, math.rad(90), math.rad(side * 35)),
+				Material = Enum.Material.Metal,
+				Color = Color3.fromRGB(200, 160, 40),
+			})
+		end
+		add({
+			Name = "StandBeam",
+			Size = Vector3.new(9, 0.8, 0.8),
+			CFrame = at * CFrame.new(0, 9, 0),
+			Material = Enum.Material.CorrodedMetal,
+			Color = Color3.fromRGB(110, 80, 58),
+		})
+		dressWithMesh(model, "Prop_AssemblyStand", at * CFrame.Angles(0, math.rad(180), 0), blocks)
+		-- Console com o painel (fica mesmo quando o modelo 3D substitui os blocos)
+		local console = part({
+			Name = "AssemblyStand",
+			Size = Vector3.new(2.4, 3, 1.2),
+			CFrame = at * CFrame.new(5.6, 1.5, 2),
+			Material = Enum.Material.Metal,
+			Color = Color3.fromRGB(60, 58, 56),
+		}, model)
+		part({
+			Name = "AssemblyScreen",
+			Size = Vector3.new(2, 1.2, 0.1),
+			CFrame = console.CFrame * CFrame.new(0, 0.9, 0.62) * CFrame.Angles(math.rad(-20), 0, 0),
+			Material = Enum.Material.Neon,
+			Color = Color3.fromRGB(90, 230, 130),
+			CanCollide = false,
+		}, model)
+		local sign = Instance.new("BillboardGui")
+		sign.Size = UDim2.fromOffset(190, 30)
+		sign.StudsOffset = Vector3.new(0, 3.2, 0)
+		sign.MaxDistance = 60
+		local text = Instance.new("TextLabel")
+		text.Size = UDim2.fromScale(1, 1)
+		text.BackgroundTransparency = 1
+		text.Font = Enum.Font.GothamBlack
+		text.TextScaled = true
+		text.TextColor3 = Color3.fromRGB(140, 255, 170)
+		text.TextStrokeTransparency = 0.4
+		text.Text = "🔧 Estande de Montagem"
+		text.Parent = sign
+		sign.Parent = console
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ObjectText = "Estande de Montagem"
+		prompt.ActionText = "Montar robôs"
+		prompt.HoldDuration = 0
+		prompt.MaxActivationDistance = 14
+		prompt.RequiresLineOfSight = false
+		prompt:SetAttribute("OpensWindow", "Robots")
+		prompt.Parent = console
+	end
+
 	-- Grid hexagonal: cada hexágono é um Model com 3 placas giradas (forma de colmeia).
 	local origin = part({
 		Name = "GridOrigin",

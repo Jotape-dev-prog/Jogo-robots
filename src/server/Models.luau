@@ -617,17 +617,49 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 	-- Raiz invisível ancorada; o resto é soldado nela para o robô andar com um único CFrame.
 	local root = block(m, "Root", Vector3.new(1, 1, 1), base, Color3.new(), Enum.Material.SmoothPlastic)
 	root.Transparency = 1
+	-- Membros e cabeça ficam em juntas (Motor6D) com o pivô no ombro/quadril/pescoço: o cliente
+	-- anima essas juntas (andar, atacar, respirar) sem custo de rede — ver AnimationController.
+	local limbs: { [string]: BasePart } = {}
+	for _, name in { "ArmL", "ArmR", "LegL", "LegR", "Head" } do
+		local limb = m:FindFirstChild(name)
+		if limb and limb:IsA("BasePart") then
+			limbs[name] = limb
+		end
+	end
+	local weaponModel = m:FindFirstChild("Weapon")
 	for _, p in m:GetDescendants() do
 		if p:IsA("BasePart") and p ~= root then
 			p.Anchored = false
 			p.Massless = true
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = root
-			weld.Part1 = p
-			weld.Parent = p
+			local limbName = if p.Parent == m then p.Name else ""
+			if limbs[limbName] == p then
+				-- pivô: topo da peça (ombro/quadril) ou base (pescoço), com a orientação do robô
+				local up = if limbName == "Head" then -p.Size.Y / 2 else p.Size.Y / 2 - 0.25
+				local pivot = CFrame.new((p.CFrame * CFrame.new(0, up, 0)).Position) * base.Rotation
+				local joint = Instance.new("Motor6D")
+				joint.Name = limbName
+				joint.Part0 = root
+				joint.Part1 = p
+				joint.C0 = root.CFrame:ToObjectSpace(pivot)
+				joint.C1 = p.CFrame:ToObjectSpace(pivot)
+				joint.Parent = root
+			else
+				-- A arma acompanha o braço direito; o olho acompanha a cabeça; o resto fica no corpo.
+				local anchor: BasePart = root
+				if weaponModel and p:IsDescendantOf(weaponModel) and limbs.ArmR then
+					anchor = limbs.ArmR
+				elseif (p.Name == "Eye" or p.Name == "Bulb" or p.Name == "Halo") and limbs.Head then
+					anchor = limbs.Head
+				end
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = anchor
+				weld.Part1 = p
+				weld.Parent = p
+			end
 		end
 	end
 	m.PrimaryPart = root
+	m:AddTag("RobotRig")
 	return m
 end
 

@@ -137,7 +137,6 @@ function Hud.Build(windows: { [string]: Ui.Window })
 	local entries = {
 		{ "Roll", "🎰 Roleta", T.Accent },
 		{ "Inventory", "🎒 Inventário", T.Info },
-		{ "Robots", "🤖 Robôs", T.Good },
 		{ "Factory", "🏭 Fábrica", Color3.fromRGB(150, 110, 60) },
 		{ "Upgrades", "⬆ Upgrades", T.Purple },
 		{ "Social", "👥 Jogadores", Color3.fromRGB(60, 140, 150) },

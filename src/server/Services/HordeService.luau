@@ -409,7 +409,21 @@ local function stepRun(run: Run, dt: number, now: number)
 			table.insert(parts, z.Part)
 			table.insert(
 				frames,
-				CFrame.lookAt(center, center + z.Facing) * CFrame.Angles(0, 0, math.sin(phase) * 0.12)
+				-- Andando: inclinado para a frente, gingando. Atacando: investidas rápidas no robô.
+				CFrame.lookAt(center, center + z.Facing)
+					* (
+						if attacking
+							then CFrame.new(0, 0, -math.max(0, math.sin(now * 7 + z.Id)) * 0.8) * CFrame.Angles(
+								-0.15 - math.max(0, math.sin(now * 7 + z.Id)) * 0.45,
+								0,
+								math.sin(now * 3.5 + z.Id) * 0.08
+							)
+							else CFrame.Angles(
+								-0.12 + math.sin(phase * 2) * 0.07,
+								math.sin(phase) * 0.1,
+								math.sin(phase) * 0.14
+							)
+					)
 			)
 		end
 

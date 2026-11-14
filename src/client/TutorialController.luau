@@ -25,7 +25,7 @@ local STEPS: { Step } = {
 		end,
 	},
 	{
-		Text = "🤖 Abra <b>Robôs</b> e toque em <b>Equipar melhores</b> — ou arraste robôs entre os hexágonos.",
+		Text = "🔧 Vá ao <b>Estande de Montagem</b> (em frente ao gerador) e monte mais um robô com as peças da roleta.",
 		Done = function(data)
 			local n = 0
 			for _ in data.Grid do

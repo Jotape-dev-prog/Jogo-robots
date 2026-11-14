@@ -8,7 +8,6 @@ local Shared = ReplicatedStorage.Shared
 local Items = require(Shared.Config.Items)
 local Rarity = require(Shared.Config.Rarity)
 local Economy = require(Shared.Config.Economy)
-local Grid = require(Shared.Config.Grid)
 
 local Ui = require(script.Parent.Parent.Ui)
 local State = require(script.Parent.Parent.State)
@@ -54,15 +53,7 @@ local function equipTargets(data: any, key: string): { { Label: string, Call: ()
 			end,
 		})
 	end
-	for _, cell in Grid.UnlockedCells(Common.Columns(data)) do
-		local occupied = data.Grid[cell] ~= nil
-		table.insert(targets, {
-			Label = if occupied then `🤖 {cell}` else `+ {cell}`,
-			Call = function()
-				State.Call("Equip", cell, item.Slot, key)
-			end,
-		})
-	end
+	-- Robôs são montados no Estande de Montagem (não aqui).
 	if item.Kind == "Part" then
 		for _, lineId in Economy.FactoryLineIds() do
 			if data.Factory.Lines[lineId].Unlocked then
@@ -160,10 +151,9 @@ local function refresh()
 		end, UDim2.fromOffset(120, 34)).LayoutOrder =
 			i
 	end
-	Ui.Button(tabsRow, "Equipar melhores", T.Good, function()
-		State.Call("EquipBest")
-		Sound.Play("Equip")
-	end, UDim2.fromOffset(160, 34)).LayoutOrder =
+	Ui.Label(tabsRow, "🔧 Monte os robôs no Estande de Montagem", UDim2.fromOffset(330, 30), {
+		TextColor3 = T.TextDim,
+	}).LayoutOrder =
 		3
 
 	Ui.Clear(grid)
