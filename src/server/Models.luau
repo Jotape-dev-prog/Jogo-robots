@@ -671,7 +671,85 @@ local ZOMBIE_COLORS = {
 }
 
 -- Zumbi: um corpo ancorado (movido pelo servidor) + partes soldadas que seguem junto.
+-- Zumbi articulado: 6 peças 3D (Zombie_<Tipo>_Head/Torso/ArmL/ArmR/LegL/LegR) presas por juntas a
+-- uma raiz invisível do tamanho do zumbi. O servidor só move a raiz; o cliente anima as juntas.
+local ZOMBIE_PARTS = { "Head", "Torso", "ArmL", "ArmR", "LegL", "LegR" }
+
+local function riggedZombie(kind: string, size: Vector3, cframe: CFrame): BasePart?
+	local templates: { [string]: MeshPart } = {}
+	for _, name in ZOMBIE_PARTS do
+		local t = asset(`Zombie_{kind}_{name}`)
+		if not t then
+			return nil
+		end
+		templates[name] = t
+	end
+	local height = templates.Torso:GetAttribute("Height")
+	local scale = size.Y / (if typeof(height) == "number" and height > 0 then height else size.Y)
+
+	local root = Instance.new("Part")
+	root.Name = kind
+	root.Anchored = true
+	root.CanCollide = false
+	root.CanQuery = false
+	root.CanTouch = false
+	root.Transparency = 1
+	root.Size = size
+	root.CFrame = cframe
+
+	for name, template in templates do
+		local offsetValue = template:GetAttribute("Offset")
+		local offset = (if typeof(offsetValue) == "Vector3" then offsetValue else Vector3.zero) * scale
+		local p = template:Clone()
+		p.Name = name
+		p.Anchored = false
+		p.Massless = true
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Size = template.Size * scale
+		p.CFrame = cframe * CFrame.new(offset - Vector3.new(0, size.Y / 2, 0))
+		p.Parent = root
+		if name == "Torso" then
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = root
+			weld.Part1 = p
+			weld.Parent = p
+		else
+			-- Pivô: pescoço (base da cabeça), quadril (topo da perna) ou ombro. Braço gerado em
+			-- "T" (deitado) tem o ombro na ponta de dentro; braço caído tem o ombro no topo.
+			local pivotLocal: Vector3
+			local side = if offset.X >= 0 then 1 else -1
+			local tPose = false
+			if name == "Head" then
+				pivotLocal = Vector3.new(0, -p.Size.Y / 2, 0)
+			elseif (name == "ArmL" or name == "ArmR") and p.Size.X > p.Size.Y * 1.1 then
+				tPose = true
+				pivotLocal = Vector3.new(-side * (p.Size.X / 2 - 0.1 * p.Size.X), 0, 0)
+			else
+				pivotLocal = Vector3.new(0, p.Size.Y / 2 - 0.1 * p.Size.Y, 0)
+			end
+			local pivot = CFrame.new((p.CFrame * CFrame.new(pivotLocal)).Position) * cframe.Rotation
+			local joint = Instance.new("Motor6D")
+			joint.Name = name
+			joint.Part0 = root
+			joint.Part1 = p
+			joint.C0 = cframe:ToObjectSpace(pivot)
+			joint.C1 = p.CFrame:ToObjectSpace(pivot)
+			joint:SetAttribute("TPose", tPose)
+			joint:SetAttribute("Side", side)
+			joint.Parent = root
+		end
+	end
+	root:AddTag("ZombieRig")
+	return root
+end
+
 function Models.Zombie(kind: string, size: Vector3, cframe: CFrame): BasePart
+	local rigged = riggedZombie(kind, size, cframe)
+	if rigged then
+		return rigged
+	end
 	local template = asset(`Zombie_{kind}`)
 	if template then
 		local root = template:Clone()

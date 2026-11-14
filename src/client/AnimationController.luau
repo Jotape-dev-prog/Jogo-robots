@@ -3,6 +3,8 @@
 --   • Robôs (tag "RobotRig"): o servidor monta braços, pernas e cabeça em juntas Motor6D e só move
 --     a raiz. Aqui cada cliente balança as juntas: andar (pela velocidade da raiz), respirar parado,
 --     golpe da arma (avisado pelo FxEvent) e "trabalhar" para os robôs da fábrica.
+--   • Zumbis (tag "ZombieRig"): mesmas juntas; andam arrastando as pernas com os braços esticados
+--     para a frente e dão patadas quando o servidor marca o atributo "Atk".
 --   • Avatares: golpe do braço direito por cima da animação padrão (Motor6D.Transform no Stepped).
 
 local CollectionService = game:GetService("CollectionService")
@@ -21,6 +23,7 @@ type Rig = {
 	Phase: number,
 	Seed: number,
 	Worker: boolean,
+	Zombie: boolean,
 	AttackStart: number,
 	AttackPattern: string,
 }
@@ -31,16 +34,18 @@ local rigs: { [Instance]: Rig } = {}
 local avatarAttacks: { [Model]: { Start: number, Pattern: string } } = {}
 
 local function track(model: Instance)
-	if not model:IsA("Model") then
-		return
+	-- Robô: Model com a raiz "Root". Zumbi: a própria peça marcada é a raiz.
+	local root: Instance? = model
+	if model:IsA("Model") then
+		root = model.PrimaryPart or model:WaitForChild("Root", 5)
 	end
-	local root = model.PrimaryPart or model:WaitForChild("Root", 5)
 	if not root or not root:IsA("BasePart") then
 		return
 	end
 	local joints: { [string]: Motor6D } = {}
 	for _, name in { "ArmL", "ArmR", "LegL", "LegR", "Head" } do
-		local joint = root:FindFirstChild(name)
+		-- as juntas chegam um instante depois da raiz pela rede
+		local joint = root:FindFirstChild(name) or root:WaitForChild(name, 2)
 		if joint and joint:IsA("Motor6D") then
 			joints[name] = joint
 		end
@@ -53,6 +58,7 @@ local function track(model: Instance)
 		Phase = 0,
 		Seed = math.random() * 10,
 		Worker = model:GetAttribute("Worker") == true,
+		Zombie = model:HasTag("ZombieRig"),
 		AttackStart = -10,
 		AttackPattern = "Cone",
 	}
@@ -80,7 +86,63 @@ local function set(joints: { [string]: Motor6D }, name: string, transform: CFram
 	end
 end
 
+-- Braço de zumbi: `lift` levanta/abaixa (positivo = para cima), `spread` abre para o lado.
+-- O braço pode ter sido gerado em "T" (deitado) ou caído; nos dois casos ele fica para a frente.
+local function zombieArm(joint: Motor6D?, lift: number, spread: number)
+	if not joint then
+		return
+	end
+	local side = joint:GetAttribute("Side")
+	local s = if side == -1 then -1 else 1
+	if joint:GetAttribute("TPose") == true then
+		joint.Transform = CFrame.Angles(lift, 0, 0) * CFrame.Angles(0, s * (math.pi / 2 - spread), 0)
+	else
+		joint.Transform = CFrame.Angles(math.pi / 2 + lift, 0, 0) * CFrame.Angles(0, 0, s * spread)
+	end
+end
+
+local function stepZombie(rig: Rig, now: number, dt: number)
+	local position = rig.Root.Position
+	local delta = position - rig.Last
+	rig.Last = position
+	local speed = Vector3.new(delta.X, 0, delta.Z).Magnitude / math.max(dt, 1 / 240)
+	rig.Speed += (math.min(speed, 30) - rig.Speed) * math.min(1, dt * 6)
+	local joints = rig.Joints
+	local seed = rig.Seed
+	if rig.Root:GetAttribute("Atk") == true then
+		-- Patadas alternadas no robô
+		local a = math.sin(now * 9 + seed)
+		zombieArm(joints.ArmL, 0.1 + math.max(0, a) * 0.7 - math.max(0, -a) * 0.5, 0.05)
+		zombieArm(joints.ArmR, 0.1 + math.max(0, -a) * 0.7 - math.max(0, a) * 0.5, 0.05)
+		set(joints, "LegL", CFrame.Angles(0.15, 0, 0))
+		set(joints, "LegR", CFrame.Angles(-0.25, 0, 0))
+		set(joints, "Head", CFrame.Angles(-0.2 + a * 0.15, 0, 0))
+	else
+		-- Arrastando os pés, braços esticados balançando, cabeça caída para o lado
+		rig.Phase += dt * (2.5 + rig.Speed * 0.9)
+		local moving = math.clamp(rig.Speed / 4, 0, 1)
+		local swing = math.sin(rig.Phase) * 0.55 * moving
+		set(joints, "LegL", CFrame.Angles(swing, 0, 0))
+		set(joints, "LegR", CFrame.Angles(-swing, 0, 0))
+		zombieArm(
+			joints.ArmL,
+			-0.05 + math.sin(rig.Phase + seed) * 0.12,
+			0.1 + math.sin(now * 1.3 + seed) * 0.06
+		)
+		zombieArm(
+			joints.ArmR,
+			-0.05 + math.sin(rig.Phase + seed + 2) * 0.12,
+			0.1 + math.cos(now * 1.1 + seed) * 0.06
+		)
+		set(joints, "Head", CFrame.Angles(0.1, 0, 0.18 * math.sin(now * 1.7 + seed)))
+	end
+end
+
 local function stepRig(rig: Rig, now: number, dt: number)
+	if rig.Zombie then
+		stepZombie(rig, now, dt)
+		return
+	end
 	local position = rig.Root.Position
 	local delta = position - rig.Last
 	rig.Last = position
@@ -134,7 +196,7 @@ function AnimationController.RobotAttack(origin: Vector3, pattern: string)
 	local bestDistance = 3
 	for _, rig in rigs do
 		local d = (rig.Root.Position - origin).Magnitude
-		if d < bestDistance then
+		if not rig.Zombie and d < bestDistance then
 			best, bestDistance = rig, d
 		end
 	end
@@ -175,6 +237,15 @@ function AnimationController.Start()
 	end)
 	CollectionService:GetInstanceRemovedSignal("RobotRig"):Connect(function(model)
 		rigs[model] = nil
+	end)
+	for _, zombie in CollectionService:GetTagged("ZombieRig") do
+		task.spawn(track, zombie)
+	end
+	CollectionService:GetInstanceAddedSignal("ZombieRig"):Connect(function(zombie)
+		task.spawn(track, zombie)
+	end)
+	CollectionService:GetInstanceRemovedSignal("ZombieRig"):Connect(function(zombie)
+		rigs[zombie] = nil
 	end)
 
 	RunService.RenderStepped:Connect(function(dt)

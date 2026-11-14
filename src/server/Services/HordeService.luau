@@ -401,6 +401,10 @@ local function stepRun(run: Run, dt: number, now: number)
 				end
 			end
 
+			-- Avisa o cliente (só quando muda) se o zumbi está atacando, para a animação das garras.
+			if (z.Part:GetAttribute("Atk") == true) ~= (attacking ~= nil) then
+				z.Part:SetAttribute("Atk", attacking ~= nil)
+			end
 			local half = ZOMBIE_LOOK[z.Kind].Size.Y / 2
 			-- Andar cambaleante: balanço lateral e leve sobe-e-desce (animação procedural barata).
 			local phase = now * (4 + z.Speed * 0.3) + z.Id
