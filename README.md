@@ -56,3 +56,15 @@ vendor/                 ProfileStore e Replica (MadStudio, licença MIT)
 - `selene src` aponta problemas.
 - Bibliotecas: [ProfileStore](https://github.com/MadStudioRoblox/ProfileStore) e
   [Replica](https://github.com/MadStudioRoblox/Replica), sucessores oficiais do ProfileService/ReplicaService.
+
+## Modelos 3D (ficam no place, não no Rojo)
+
+As malhas vivem em `ServerStorage.Assets`; se uma faltar, o código monta a versão de blocos.
+
+- Robôs: `Robot_<Scrap|Industrial|Future>_<Head|Torso|ArmL|ArmR|LegL|LegR>` (atributo `Offset`).
+- Zumbis: `Zombie_<Normal|Fast|Tank|Boss>_<Parte>` (atributos `Offset`, `Height`).
+- Armas: `Weapon_<Sword|Hammer|Rifle|Shield>_<Scrap|Industrial|Future>`. Atributos:
+  `Rot` (gira a malha para a ponta ficar em -Z e o topo em +Y), `Length` (comprimento real),
+  `GripFrac` (onde fica a mão: 0 = ponta de trás, 1 = ponta da frente), `GripUp` (quanto a malha
+  sobe em relação à mão) e, nos rifles, `Bore` (altura do cano em fração da altura da malha).
+- Cenário: `Prop_*`, `Tree_*`.

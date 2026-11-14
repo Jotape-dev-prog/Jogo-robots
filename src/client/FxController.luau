@@ -170,6 +170,108 @@ local function event(entry: any)
 	end
 end
 
+-- Tiro de rifle: clarão em estrela e luz na boca do cano, projétil riscando até o fim do alcance,
+-- rastro que some, fumaça e a cápsula saltando para o lado.
+-- `shoulder` + `dir` × `reach` = boca do cano (rifle no ombro, apontado para o alvo).
+function FxController.Shot(
+	shoulder: Vector3,
+	reach: number,
+	direction: Vector3,
+	range: number,
+	color: Color3?
+)
+	if not folder then
+		return
+	end
+	local flatDir = Vector3.new(direction.X, 0, direction.Z)
+	local dir = if flatDir.Magnitude > 0.01 then flatDir.Unit else Vector3.zAxis
+	local tint = color or COLORS.Line
+	local muzzle = shoulder + dir * reach
+	local aim = CFrame.lookAt(muzzle, muzzle + dir)
+	local length = math.max(4, range - reach)
+
+	-- Clarão: bola + duas lâminas cruzadas + luz rápida
+	local flash = neon(Vector3.new(0.9, 0.9, 0.9), aim, Color3.fromRGB(255, 240, 190), Enum.PartType.Ball)
+	fadeOut(flash, 0.09, { Size = Vector3.new(2.2, 2.2, 2.2) })
+	for i = 0, 1 do
+		local blade = neon(
+			Vector3.new(2.6, 0.12, 0.5),
+			aim * CFrame.new(0, 0, -0.4) * CFrame.Angles(0, 0, math.rad(45 + i * 90)),
+			Color3.fromRGB(255, 220, 140)
+		)
+		fadeOut(blade, 0.08)
+	end
+	local cone = neon(Vector3.new(0.5, 0.5, 2.4), aim * CFrame.new(0, 0, -1.4), Color3.fromRGB(255, 230, 160))
+	fadeOut(cone, 0.08, { Size = Vector3.new(0.1, 0.1, 3.4) })
+	local light = Instance.new("PointLight")
+	light.Color = Color3.fromRGB(255, 220, 150)
+	light.Range = 14
+	light.Brightness = 4
+	light.Parent = flash
+
+	-- Rastro fino que fica um instante + projétil brilhante que corre até o fim
+	local trail = neon(Vector3.new(0.08, 0.08, length), aim * CFrame.new(0, 0, -length / 2), tint)
+	trail.Transparency = 0.55
+	fadeOut(trail, 0.22)
+	local bullet = neon(Vector3.new(0.22, 0.22, 5), aim * CFrame.new(0, 0, -2.5), Color3.new(1, 1, 1))
+	bullet.Transparency = 0
+	local fly = TweenService:Create(
+		bullet,
+		TweenInfo.new(math.clamp(length / 380, 0.05, 0.16), Enum.EasingStyle.Linear),
+		{ CFrame = aim * CFrame.new(0, 0, -(length - 2.5)) }
+	)
+	fly:Play()
+	fly.Completed:Once(function()
+		bullet:Destroy()
+	end)
+
+	-- Fumaça na boca do cano: dois fiapos pequenos que sobem
+	for _ = 1, 2 do
+		local size = 0.25 + math.random() * 0.2
+		local wisp = neon(
+			Vector3.new(size, size, size),
+			CFrame.new(muzzle + dir * 0.3),
+			Color3.fromRGB(205, 205, 210),
+			Enum.PartType.Ball
+		)
+		wisp.Material = Enum.Material.SmoothPlastic
+		wisp.Transparency = 0.45
+		fadeOut(wisp, 0.35 + math.random() * 0.2, {
+			Size = Vector3.new(size, size, size) * 2.4,
+			CFrame = CFrame.new(
+				muzzle + dir * (0.6 + math.random() * 0.5) + Vector3.new(0, 0.5 + math.random() * 0.5, 0)
+			),
+		})
+	end
+
+	-- Cápsula saltando para a direita e caindo
+	local shell = neon(
+		Vector3.new(0.14, 0.14, 0.4),
+		aim * CFrame.new(0.3, 0.1, reach * 0.6),
+		Color3.fromRGB(230, 180, 70)
+	)
+	shell.Material = Enum.Material.Metal
+	shell.Transparency = 0
+	local side = aim.RightVector * (1.6 + math.random()) + Vector3.new(0, 1.2, 0)
+	local up = TweenService:Create(
+		shell,
+		TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ CFrame = (shell.CFrame + side) * CFrame.Angles(2, 1, 0) }
+	)
+	up:Play()
+	up.Completed:Once(function()
+		local fall =
+			TweenService:Create(shell, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+				CFrame = (shell.CFrame + side * 0.5 - Vector3.new(0, 3.4, 0)) * CFrame.Angles(3, 2, 1),
+				Transparency = 1,
+			})
+		fall:Play()
+		fall.Completed:Once(function()
+			shell:Destroy()
+		end)
+	end)
+end
+
 local function draw(entry: any)
 	if entry.t then
 		event(entry)
@@ -181,12 +283,15 @@ local function draw(entry: any)
 	local own = entry.u == localPlayer.UserId -- o próprio golpe já foi desenhado na hora pelo CombatController
 
 	-- Animação do golpe: robô que está na origem, ou o avatar de outro jogador.
+	-- Para o rifle, a animação devolve o ombro e o alcance do cano (de onde sai o tiro).
+	local shoulder: Vector3?, reach = nil, 0
 	if entry.u == 0 then
-		AnimationController.RobotAttack(origin, entry.p)
+		shoulder, reach = AnimationController.RobotAttack(origin, entry.p)
 	elseif not own then
 		local attacker = Players:GetPlayerByUserId(entry.u)
 		if attacker then
-			AnimationController.AvatarAttack(attacker, entry.p)
+			AnimationController.AvatarAttack(attacker, entry.p, dir)
+			shoulder, reach = AnimationController.AvatarMuzzle(attacker)
 		end
 	end
 
@@ -207,17 +312,7 @@ local function draw(entry: any)
 			)
 			fadeOut(ring, 0.3, { Size = Vector3.new(0.3, entry.r * 2, entry.r * 2) })
 		elseif entry.p == "Line" then
-			local length = entry.r
-			local beam =
-				neon(Vector3.new(0.25, 0.25, length), facing * CFrame.new(0, 2.2, -length / 2), color)
-			fadeOut(beam, 0.15)
-			local flash = neon(
-				Vector3.new(1, 1, 1),
-				facing * CFrame.new(0, 2.2, -1.2),
-				Color3.new(1, 1, 0.8),
-				Enum.PartType.Ball
-			)
-			fadeOut(flash, 0.1, { Size = Vector3.new(2, 2, 2) })
+			FxController.Shot(shoulder or (origin + Vector3.new(0, 2.6, 0)), reach, dir, entry.r, color)
 		else
 			-- Leque de 5 lâminas cobrindo o ângulo do corte.
 			local half = math.rad(entry.a / 2)

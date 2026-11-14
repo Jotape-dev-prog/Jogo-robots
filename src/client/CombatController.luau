@@ -12,6 +12,7 @@ local Net = require(ReplicatedStorage.Shared.Net)
 local Sound = require(script.Parent.SoundController)
 local GridController = require(script.Parent.GridController)
 local AnimationController = require(script.Parent.AnimationController)
+local FxController = require(script.Parent.FxController)
 
 local player = Players.LocalPlayer
 local mouse = player:GetMouse()
@@ -39,6 +40,12 @@ end
 
 -- Efeito visual local e rápido do golpe.
 local function playEffect(root: BasePart, dir: Vector3, result: any)
+	if result.Pattern == "Line" then
+		-- Rifle: clarão, projétil e cápsula saindo da boca do cano
+		local shoulder, reach = AnimationController.AvatarMuzzle(player)
+		FxController.Shot(shoulder or (root.Position + Vector3.new(0, 1, 0)), reach, dir, result.Range, nil)
+		return
+	end
 	local fx = Instance.new("Part")
 	fx.Anchored = true
 	fx.CanCollide = false
@@ -80,6 +87,8 @@ local function attack()
 	end
 	busy = true
 	local dir = aimDirection(root)
+	-- o avatar vira para onde o golpe vai (o rifle e a espada apontam para o alvo)
+	root.CFrame = CFrame.lookAt(root.Position, root.Position + dir)
 	local ok, result = pcall(function()
 		return Net.Function("Attack"):InvokeServer(dir)
 	end)
@@ -87,7 +96,7 @@ local function attack()
 	if ok and result and result.Ok then
 		localCooldownUntil = os.clock() + (result.Cooldown or 0.5) * 0.9
 		playEffect(root, dir, result)
-		AnimationController.AvatarAttack(player, result.Pattern)
+		AnimationController.AvatarAttack(player, result.Pattern, dir)
 		Sound.PlayAttack(result.Pattern, result.Hits)
 	end
 end

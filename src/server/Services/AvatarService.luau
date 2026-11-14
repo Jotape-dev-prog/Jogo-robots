@@ -64,15 +64,9 @@ function AvatarService.Refresh(player: Player)
 		return
 	end
 	visual.Name = "AvatarWeapon"
-	for _, p in visual:GetDescendants() do
-		if p:IsA("BasePart") then
-			p.Anchored = false
-			p.Massless = true
-			local weld = Instance.new("WeldConstraint")
-			weld.Part0 = hand
-			weld.Part1 = p
-			weld.Parent = p
-		end
+	-- Junta entre a mão e a arma: o cliente gira a arma na mira e no recuo do rifle.
+	if visual.PrimaryPart then
+		Models.AttachWeapon(visual, hand, visual.PrimaryPart, nil)
 	end
 end
 

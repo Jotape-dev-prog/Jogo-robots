@@ -107,7 +107,8 @@ local function paint(key: string): (Color3, Style)
 end
 
 -- Arma em coordenadas locais (empunhadura na origem, lâmina/cano para -Z).
-function Models.Weapon(parent: Instance, key: string, grip: CFrame, scale: number?): Model?
+-- `shieldAt` (opcional): onde fica o escudo do martelo (o robô põe no braço esquerdo).
+function Models.Weapon(parent: Instance, key: string, grip: CFrame, scale: number?, shieldAt: CFrame?): Model?
 	local item = Items.Parse(key)
 	if not item or item.Kind ~= "Weapon" then
 		return nil
@@ -117,22 +118,68 @@ function Models.Weapon(parent: Instance, key: string, grip: CFrame, scale: numbe
 	local trimColor = Rarity.Get(item.Tier).Color
 	local m = Instance.new("Model")
 	m.Name = "Weapon"
-	local template = asset(`Weapon_{item.Type}`)
+	-- "Grip" (invisível) marca a empunhadura: quem segura a arma prende esta peça por uma junta e
+	-- todas as outras peças da arma são soldadas nela (ver Models.AttachWeapon).
+	local gripPart =
+		block(m, "Grip", Vector3.new(0.2, 0.2, 0.2), grip, Color3.new(), Enum.Material.SmoothPlastic)
+	gripPart.Transparency = 1
+	gripPart:SetAttribute("Type", item.Type)
+	gripPart:SetAttribute("Length", 3 * s)
+	m.PrimaryPart = gripPart
+
+	-- Modelo 3D por faixa (Weapon_<Tipo>_<Faixa>). Atributos do asset: Rot (gira a malha para a
+	-- ponta ficar em -Z e o topo em +Y), GripFrac (onde fica a mão, 0 = ponta de trás, 1 = ponta
+	-- da frente) e GripUp (quanto a malha sobe em relação à mão).
+	local band = BAND_NAMES[bandOf(key)]
+	local template = asset(`Weapon_{item.Type}_{band}`)
 	if template then
-		-- Modelo 3D: comprimento ao longo de -Z; a empunhadura fica perto da ponta de trás.
+		local rotValue = template:GetAttribute("Rot")
+		local rot = if typeof(rotValue) == "CFrame" then rotValue else CFrame.identity
 		local size = template.Size * s
-		local back = if item.Type == "Rifle" then 0.3 elseif item.Type == "Hammer" then 0.3 else 0.4
-		meshPart(m, "Mesh", template, size, grip * CFrame.new(0, 0, -size.Z * back))
-		-- Faixa brilhante na cor da raridade (é o que diferencia os tiers à distância).
+		local lengthValue = template:GetAttribute("Length")
+		-- Length: comprimento real ao longo do cano/lâmina (malhas geradas na diagonal têm a
+		-- caixa maior que a arma)
+		local length = if typeof(lengthValue) == "number"
+			then lengthValue * s
+			else math.max(size.X, size.Y, size.Z)
+		local fracValue, upValue = template:GetAttribute("GripFrac"), template:GetAttribute("GripUp")
+		local frac = if typeof(fracValue) == "number" then fracValue else 0.2
+		local lift = (if typeof(upValue) == "number" then upValue else 0) * s
+		meshPart(m, "Mesh", template, size, grip * CFrame.new(0, lift, -(0.5 - frac) * length) * rot)
+		gripPart:SetAttribute("Length", (1 - frac) * length)
+		-- Altura do cano e da mira acima da mão (o cliente usa para mirar na altura dos olhos e
+		-- soltar o clarão do tiro na boca do cano).
+		local tall = math.abs(rot:VectorToWorldSpace(size).Y)
+		-- Bore: altura do cano em relação ao centro da malha, em fração da altura dela
+		local boreValue = template:GetAttribute("Bore")
+		local bore = if typeof(boreValue) == "number" then boreValue else 0.12
+		gripPart:SetAttribute("BoreUp", lift + tall * bore)
+		gripPart:SetAttribute("SightUp", lift + tall * 0.4)
+		-- Brilho na cor da raridade (diferencia os tiers à distância sem esconder o modelo).
 		if item.Tier >= 4 then
-			block(
-				m,
-				"RarityGlow",
-				Vector3.new(0.12, 0.12, size.Z * 0.6),
-				grip * CFrame.new(0, size.Y * 0.35, -size.Z * 0.5),
-				trimColor,
-				Enum.Material.Neon
-			)
+			local glow = Instance.new("PointLight")
+			glow.Name = "RarityGlow"
+			glow.Color = trimColor
+			glow.Range = 4 + item.Tier * 0.25
+			glow.Brightness = 0.25 + item.Tier * 0.05
+			glow.Shadows = false
+			glow.Parent = gripPart
+		end
+		if item.Type == "Hammer" then
+			local shield = asset(`Weapon_Shield_{band}`)
+			local at = shieldAt or grip * CFrame.new(-1.5 * s, 0, 0.2 * s)
+			if shield then
+				local shieldRot = shield:GetAttribute("Rot")
+				meshPart(
+					m,
+					"Shield",
+					shield,
+					shield.Size * s,
+					at * (if typeof(shieldRot) == "CFrame" then shieldRot else CFrame.identity)
+				)
+			else
+				block(m, "Shield", Vector3.new(1.8, 2.2, 0.25) * s, at, color, style.Material)
+			end
 		end
 		m.Parent = parent
 		return m
@@ -221,6 +268,36 @@ function Models.Weapon(parent: Instance, key: string, grip: CFrame, scale: numbe
 	end
 	m.Parent = parent
 	return m
+end
+
+-- Prende a arma em quem a segura: junta Motor6D (nome "Weapon") entre `holder` e a empunhadura,
+-- e o resto da arma soldado na empunhadura. O cliente anima essa junta (mira e recuo do rifle).
+-- O escudo fica soldado em `shieldHolder` (braço esquerdo do robô) ou na própria arma.
+function Models.AttachWeapon(weapon: Model, holder: BasePart, jointParent: Instance, shieldHolder: BasePart?)
+	local gripPart = weapon.PrimaryPart
+	if not gripPart then
+		return
+	end
+	for _, p in weapon:GetDescendants() do
+		if p:IsA("BasePart") then
+			p.Anchored = false
+			p.Massless = true
+			p.CanCollide = false
+			if p == gripPart then
+				local joint = Instance.new("Motor6D")
+				joint.Name = "Weapon"
+				joint.Part0 = holder
+				joint.Part1 = gripPart
+				joint.C0 = holder.CFrame:ToObjectSpace(gripPart.CFrame)
+				joint.Parent = jointParent
+			else
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = if p.Name == "Shield" and shieldHolder then shieldHolder else gripPart
+				weld.Part1 = p
+				weld.Parent = p
+			end
+		end
+	end
 end
 
 -- Robô completo a partir das peças equipadas. `base` = chão sob o robô, olhando para os zumbis.
@@ -579,7 +656,13 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 	end
 
 	if pad.Weapon ~= "" then
-		Models.Weapon(m, pad.Weapon, up * CFrame.new(hand), 1.1)
+		local leftArm = m:FindFirstChild("ArmL")
+		local shieldAt: CFrame? = nil
+		if leftArm and leftArm:IsA("BasePart") then
+			-- escudo na frente do braço esquerdo, de pé, virado para os zumbis
+			shieldAt = CFrame.new(leftArm.Position) * base.Rotation * CFrame.new(-0.2, -0.3, -0.9)
+		end
+		Models.Weapon(m, pad.Weapon, up * CFrame.new(hand), 1.1, shieldAt)
 	end
 
 	-- Brilho nos tiers futuristas (7+).
@@ -632,7 +715,9 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 			p.Anchored = false
 			p.Massless = true
 			local limbName = if p.Parent == m then p.Name else ""
-			if limbs[limbName] == p then
+			if weaponModel and p:IsDescendantOf(weaponModel) then
+				continue -- a arma é presa depois, por Models.AttachWeapon
+			elseif limbs[limbName] == p then
 				-- pivô: topo da peça (ombro/quadril) ou base (pescoço), com a orientação do robô
 				local up = if limbName == "Head" then -p.Size.Y / 2 else p.Size.Y / 2 - 0.25
 				local pivot = CFrame.new((p.CFrame * CFrame.new(0, up, 0)).Position) * base.Rotation
@@ -644,11 +729,9 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 				joint.C1 = p.CFrame:ToObjectSpace(pivot)
 				joint.Parent = root
 			else
-				-- A arma acompanha o braço direito; o olho acompanha a cabeça; o resto fica no corpo.
+				-- O olho acompanha a cabeça; o resto fica no corpo.
 				local anchor: BasePart = root
-				if weaponModel and p:IsDescendantOf(weaponModel) and limbs.ArmR then
-					anchor = limbs.ArmR
-				elseif (p.Name == "Eye" or p.Name == "Bulb" or p.Name == "Halo") and limbs.Head then
+				if (p.Name == "Eye" or p.Name == "Bulb" or p.Name == "Halo") and limbs.Head then
 					anchor = limbs.Head
 				end
 				local weld = Instance.new("WeldConstraint")
@@ -657,6 +740,9 @@ function Models.Robot(pad: { [string]: string }, base: CFrame): Model
 				weld.Parent = p
 			end
 		end
+	end
+	if weaponModel and weaponModel:IsA("Model") then
+		Models.AttachWeapon(weaponModel, limbs.ArmR or root, root, limbs.ArmL)
 	end
 	m.PrimaryPart = root
 	m:AddTag("RobotRig")
